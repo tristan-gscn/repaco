@@ -1,0 +1,719 @@
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stddef.h>
+#include <stdint.h>
+#include "ft_printf.h"
+
+typedef struct s_test_entry {
+	const char *id;
+	const char *module;
+	const char *name;
+	const char *category;
+	const char *desc;
+	const char *input;
+	const char *expected;
+	const char *code;
+	int (*fn)(char *exp, char *act, char *expl, char *adv);
+} t_test_entry;
+
+typedef struct {
+	int ret;
+	char buf[8192];
+	int len;
+} t_run_res;
+
+#define CAPTURE_CALL(res_var, call_expr) do { \
+	int p[2]; \
+	if (pipe(p) == -1) { (res_var).ret = -1; (res_var).len = 0; (res_var).buf[0] = '\0'; break; } \
+	int saved_stdout = dup(STDOUT_FILENO); \
+	fflush(stdout); \
+	dup2(p[1], STDOUT_FILENO); \
+	close(p[1]); \
+	(res_var).ret = (call_expr); \
+	fflush(stdout); \
+	dup2(saved_stdout, STDOUT_FILENO); \
+	close(saved_stdout); \
+	(res_var).len = read(p[0], (res_var).buf, sizeof((res_var).buf) - 1); \
+	close(p[0]); \
+	if ((res_var).len < 0) (res_var).len = 0; \
+	(res_var).buf[(res_var).len] = '\0'; \
+} while (0)
+
+static void escape_bytes(char *dest, size_t dest_sz, const char *src, int len) {
+	size_t d = 0;
+	for (int i = 0; i < len && d + 6 < dest_sz; i++) {
+		unsigned char c = (unsigned char)src[i];
+		if (c == '\0') {
+			dest[d++] = '\\'; dest[d++] = '0';
+		} else if (c == '\n') {
+			dest[d++] = '\\'; dest[d++] = 'n';
+		} else if (c == '\t') {
+			dest[d++] = '\\'; dest[d++] = 't';
+		} else if (c == '\r') {
+			dest[d++] = '\\'; dest[d++] = 'r';
+		} else if (c == '\\') {
+			dest[d++] = '\\'; dest[d++] = '\\';
+		} else if (c == '\"') {
+			dest[d++] = '\\'; dest[d++] = '\"';
+		} else if (c < 32 || c >= 127) {
+			d += snprintf(dest + d, dest_sz - d, "\\x%02x", c);
+		} else {
+			dest[d++] = (char)c;
+		}
+	}
+	dest[d] = '\0';
+}
+
+static int compare_res(const t_run_res *ft, const t_run_res *sys,
+                       char *exp, char *act, char *expl, char *adv) {
+	char esc_ft[1024];
+	char esc_sys[1024];
+	escape_bytes(esc_ft, sizeof(esc_ft), ft->buf, ft->len);
+	escape_bytes(esc_sys, sizeof(esc_sys), sys->buf, sys->len);
+
+	snprintf(exp, 512, "ret: %d, output: \"%s\"", sys->ret, esc_sys);
+	snprintf(act, 512, "ret: %d, output: \"%s\"", ft->ret, esc_ft);
+
+	if (ft->ret != sys->ret) {
+		snprintf(expl, 512, "Return value mismatch: ft_printf returned %d, but printf returned %d.", ft->ret, sys->ret);
+		snprintf(adv, 512, "Ensure ft_printf returns the total count of printed characters.");
+		return 0;
+	}
+	if (ft->len != sys->len) {
+		snprintf(expl, 512, "Output length mismatch: ft_printf wrote %d bytes, but printf wrote %d bytes.", ft->len, sys->len);
+		snprintf(adv, 512, "Check that all characters are written to stdout without truncation.");
+		return 0;
+	}
+	if (memcmp(ft->buf, sys->buf, (size_t)sys->len) != 0) {
+		snprintf(expl, 512, "Output content mismatch.");
+		snprintf(adv, 512, "Compare the actual output bytes against standard printf.");
+		return 0;
+	}
+	return 1;
+}
+
+/* ========================================================================= */
+/* TEST IMPLEMENTATIONS                                                      */
+/* ========================================================================= */
+
+/* --- %c (ft_printf_c.c) --- */
+static int test_c_simple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Char: %c", 'a'));
+	CAPTURE_CALL(sys, printf("Char: %c", 'a'));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_c_zero(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%c", 0));
+	CAPTURE_CALL(sys, printf("%c", 0));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_c_upper(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Uppercase: %c", 'Z'));
+	CAPTURE_CALL(sys, printf("Uppercase: %c", 'Z'));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_c_digit(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Digit: %c", '9'));
+	CAPTURE_CALL(sys, printf("Digit: %c", '9'));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_c_space_newline(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("[%c][%c][%c]", ' ', '\n', '\t'));
+	CAPTURE_CALL(sys, printf("[%c][%c][%c]", ' ', '\n', '\t'));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_c_multiple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%c %c %c", 'A', 'B', 'C'));
+	CAPTURE_CALL(sys, printf("%c %c %c", 'A', 'B', 'C'));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_c_extended(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%c%c", (char)127, (char)-1));
+	CAPTURE_CALL(sys, printf("%c%c", (char)127, (char)-1));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* --- %s (ft_printf_s.c) --- */
+static int test_s_simple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Hello, %s!", "42"));
+	CAPTURE_CALL(sys, printf("Hello, %s!", "42"));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_s_empty(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Empty: '%s'", ""));
+	CAPTURE_CALL(sys, printf("Empty: '%s'", ""));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_s_null(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	char *null_ptr = NULL;
+	CAPTURE_CALL(ft, ft_printf("NULL: %s", null_ptr));
+	CAPTURE_CALL(sys, printf("NULL: %s", null_ptr));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_s_multiple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%s %s %s", "42", "Network", "Lausanne"));
+	CAPTURE_CALL(sys, printf("%s %s %s", "42", "Network", "Lausanne"));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_s_long(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	const char *long_s = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+	CAPTURE_CALL(ft, ft_printf("Long: %s", long_s));
+	CAPTURE_CALL(sys, printf("Long: %s", long_s));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_s_special(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Special: %s", "Line1\nLine2\tTab\\Backslash\"Quote\""));
+	CAPTURE_CALL(sys, printf("Special: %s", "Line1\nLine2\tTab\\Backslash\"Quote\""));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* --- %p (ft_printf_p.c) --- */
+static int test_p_null(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	void *null_ptr = NULL;
+	CAPTURE_CALL(ft, ft_printf("%p", null_ptr));
+	CAPTURE_CALL(sys, printf("%p", null_ptr));
+
+	char esc_ft[256];
+	char esc_sys[256];
+	escape_bytes(esc_ft, sizeof(esc_ft), ft.buf, ft.len);
+	escape_bytes(esc_sys, sizeof(esc_sys), sys.buf, sys.len);
+
+	snprintf(exp, 512, "ret: %d, output: \"%s\" (or \"(nil)\" / \"0x0\")", sys.ret, esc_sys);
+	snprintf(act, 512, "ret: %d, output: \"%s\"", ft.ret, esc_ft);
+
+	/* 42 Moulinette & libc compatibility: accept (nil) [ret 5] or 0x0 [ret 3] or exact match */
+	if (strcmp(ft.buf, "(nil)") == 0 && ft.ret == 5) return 1;
+	if (strcmp(ft.buf, "0x0") == 0 && ft.ret == 3) return 1;
+	if (ft.ret == sys.ret && ft.len == sys.len && memcmp(ft.buf, sys.buf, (size_t)sys.len) == 0) return 1;
+
+	snprintf(expl, 512, "For NULL pointer %%p, expected '(nil)' (ret 5) or '0x0' (ret 3), got '%s' (ret %d)", esc_ft, ft.ret);
+	snprintf(adv, 512, "Ensure NULL pointers are formatted as (nil) or 0x0 with accurate return count.");
+	return 0;
+}
+
+static int test_p_address(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	int val = 42;
+	void *ptr = &val;
+	CAPTURE_CALL(ft, ft_printf("Address: %p", ptr));
+	CAPTURE_CALL(sys, printf("Address: %p", ptr));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_p_small(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	void *ptr = (void *)16;
+	CAPTURE_CALL(ft, ft_printf("%p", ptr));
+	CAPTURE_CALL(sys, printf("%p", ptr));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_p_large(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	void *ptr = (void *)(uintptr_t)0x7ffeefbff568ULL;
+	CAPTURE_CALL(ft, ft_printf("%p", ptr));
+	CAPTURE_CALL(sys, printf("%p", ptr));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_p_multiple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	int a = 1, b = 2;
+	CAPTURE_CALL(ft, ft_printf("%p -> %p", (void *)&a, (void *)&b));
+	CAPTURE_CALL(sys, printf("%p -> %p", (void *)&a, (void *)&b));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* --- %d & %i (ft_printf_di.c) --- */
+static int test_di_zero(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Zero: %d, %i", 0, -0));
+	CAPTURE_CALL(sys, printf("Zero: %d, %i", 0, -0));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_di_positive(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Pos: %d, %i", 42, 123456789));
+	CAPTURE_CALL(sys, printf("Pos: %d, %i", 42, 123456789));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_di_negative(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Neg: %d, %i", -42, -987654321));
+	CAPTURE_CALL(sys, printf("Neg: %d, %i", -42, -987654321));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_di_int_max(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("INT_MAX: %d", INT_MAX));
+	CAPTURE_CALL(sys, printf("INT_MAX: %d", INT_MAX));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_di_int_min(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("INT_MIN: %d", INT_MIN));
+	CAPTURE_CALL(sys, printf("INT_MIN: %d", INT_MIN));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_di_edges(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Edges: %d, %d", INT_MAX - 1, INT_MIN + 1));
+	CAPTURE_CALL(sys, printf("Edges: %d, %d", INT_MAX - 1, INT_MIN + 1));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_di_multiple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%d + %d = %i", 20, 22, 42));
+	CAPTURE_CALL(sys, printf("%d + %d = %i", 20, 22, 42));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_di_interleaved(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%i %d %i %d", 1, -1, 100, -100));
+	CAPTURE_CALL(sys, printf("%i %d %i %d", 1, -1, 100, -100));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* --- %u (ft_printf_u.c) --- */
+static int test_u_zero(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Unsigned zero: %u", 0U));
+	CAPTURE_CALL(sys, printf("Unsigned zero: %u", 0U));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_u_positive(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Unsigned pos: %u", 42U));
+	CAPTURE_CALL(sys, printf("Unsigned pos: %u", 42U));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_u_uint_max(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("UINT_MAX: %u", UINT_MAX));
+	CAPTURE_CALL(sys, printf("UINT_MAX: %u", UINT_MAX));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_u_negative_cast(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Cast: %u, %u", (unsigned int)-1, (unsigned int)-42));
+	CAPTURE_CALL(sys, printf("Cast: %u, %u", (unsigned int)-1, (unsigned int)-42));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_u_multiple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%u / %u = %u", 42U, 100U, 1000000000U));
+	CAPTURE_CALL(sys, printf("%u / %u = %u", 42U, 100U, 1000000000U));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* --- %x (ft_printf_x.c) --- */
+static int test_x_zero(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Hex zero: %x", 0));
+	CAPTURE_CALL(sys, printf("Hex zero: %x", 0));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_x_single_digit(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%x %x %x", 1, 10, 15));
+	CAPTURE_CALL(sys, printf("%x %x %x", 1, 10, 15));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_x_two_digits(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%x %x %x", 16, 42, 255));
+	CAPTURE_CALL(sys, printf("%x %x %x", 16, 42, 255));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_x_uint_max(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Hex UINT_MAX: %x", UINT_MAX));
+	CAPTURE_CALL(sys, printf("Hex UINT_MAX: %x", UINT_MAX));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_x_patterns(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Pattern: %x, %x", 0x12345678, 0xabcdef01));
+	CAPTURE_CALL(sys, printf("Pattern: %x, %x", 0x12345678, 0xabcdef01));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_x_multiple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("0x%x 0x%x 0x%x", 0, 42, 3735928559U));
+	CAPTURE_CALL(sys, printf("0x%x 0x%x 0x%x", 0, 42, 3735928559U));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* --- %X (ft_printf_X.c) --- */
+static int test_X_zero(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Hex upper zero: %X", 0));
+	CAPTURE_CALL(sys, printf("Hex upper zero: %X", 0));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_X_single_digit(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%X %X %X", 1, 10, 15));
+	CAPTURE_CALL(sys, printf("%X %X %X", 1, 10, 15));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_X_two_digits(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%X %X %X", 16, 42, 255));
+	CAPTURE_CALL(sys, printf("%X %X %X", 16, 42, 255));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_X_uint_max(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Hex UINT_MAX: %X", UINT_MAX));
+	CAPTURE_CALL(sys, printf("Hex UINT_MAX: %X", UINT_MAX));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_X_patterns(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Pattern: %X, %X", 0x12345678, 0xABCDEF01));
+	CAPTURE_CALL(sys, printf("Pattern: %X, %X", 0x12345678, 0xABCDEF01));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_X_multiple(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("0x%X 0x%X 0x%X", 0, 42, 3735928559U));
+	CAPTURE_CALL(sys, printf("0x%X 0x%X 0x%X", 0, 42, 3735928559U));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* --- %% (ft_printf_percent.c) --- */
+static int test_pct_single(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%%"));
+	CAPTURE_CALL(sys, printf("%%"));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_pct_double(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%%%%"));
+	CAPTURE_CALL(sys, printf("%%%%"));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_pct_spaced(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%% %% %%"));
+	CAPTURE_CALL(sys, printf("%% %% %%"));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_pct_surrounded(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("100%% guaranteed %% bonus"));
+	CAPTURE_CALL(sys, printf("100%% guaranteed %% bonus"));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_pct_mixed(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%%%d%%%%s%%", 42));
+	CAPTURE_CALL(sys, printf("%%%d%%%%s%%", 42));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* --- Mixed & Complex (ft_printf_mixed.c) --- */
+static int test_mixed_plain(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Hello, World! 42 Network."));
+	CAPTURE_CALL(sys, printf("Hello, World! 42 Network."));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_mixed_empty(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf(""));
+	CAPTURE_CALL(sys, printf(""));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_mixed_all_conversions(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	int x = 42;
+	CAPTURE_CALL(ft, ft_printf("c:%c s:%s p:%p d:%d i:%i u:%u x:%x X:%X %%:%%",
+	                           'Z', "str", (void *)&x, -42, 42, 420U, 0xabc, 0xDEF));
+	CAPTURE_CALL(sys, printf("c:%c s:%s p:%p d:%d i:%i u:%u x:%x X:%X %%:%%",
+	                         'Z', "str", (void *)&x, -42, 42, 420U, 0xabc, 0xDEF));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_mixed_consecutive(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("%c%s%d%u%x%X%%", 'A', "BCD", 12, 34U, 0xef, 0xEF));
+	CAPTURE_CALL(sys, printf("%c%s%d%u%x%X%%", 'A', "BCD", 12, 34U, 0xef, 0xEF));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_mixed_escape_chars(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Escapes:\n\t\"quote\"\r\\slash\\ %d%%\n", 100));
+	CAPTURE_CALL(sys, printf("Escapes:\n\t\"quote\"\r\\slash\\ %d%%\n", 100));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+static int test_mixed_long_format(char *exp, char *act, char *expl, char *adv) {
+	t_run_res ft, sys;
+	CAPTURE_CALL(ft, ft_printf("Part1: %s, Part2: %d, Part3: %u, Part4: %x, Part5: %X, Part6: %c, Part7: %p, End%%\n",
+	                           "very long string with details", 1234567, 7654321U, 0x1234567, 0x7654321, '!', (void *)0x12345678));
+	CAPTURE_CALL(sys, printf("Part1: %s, Part2: %d, Part3: %u, Part4: %x, Part5: %X, Part6: %c, Part7: %p, End%%\n",
+	                         "very long string with details", 1234567, 7654321U, 0x1234567, 0x7654321, '!', (void *)0x12345678));
+	return compare_res(&ft, &sys, exp, act, expl, adv);
+}
+
+/* ========================================================================= */
+/* TEST TABLE                                                                */
+/* ========================================================================= */
+
+static const t_test_entry g_tests[] = {
+	/* --- ft_printf_c.c --- */
+	{"printf_c_simple", "ft_printf_c", "Printable ASCII character", "MANDATORY", "Tests printing a single letter 'a'",
+		"\"Char: %c\", 'a'", "ret: 8, output: \"Char: a\"", "ft_printf(\"Char: %c\", 'a');", test_c_simple},
+	{"printf_c_zero", "ft_printf_c", "Null byte character (\\0)", "MANDATORY", "Tests printing \\0 character and returning 1",
+		"\"%c\", 0", "ret: 1, output: \"\\0\"", "ft_printf(\"%c\", 0);", test_c_zero},
+	{"printf_c_upper", "ft_printf_c", "Uppercase character", "MANDATORY", "Tests printing uppercase 'Z'",
+		"\"Uppercase: %c\", 'Z'", "ret: 12, output: \"Uppercase: Z\"", "ft_printf(\"Uppercase: %c\", 'Z');", test_c_upper},
+	{"printf_c_digit", "ft_printf_c", "Digit character", "MANDATORY", "Tests printing digit character '9'",
+		"\"Digit: %c\", '9'", "ret: 8, output: \"Digit: 9\"", "ft_printf(\"Digit: %c\", '9');", test_c_digit},
+	{"printf_c_space_newline", "ft_printf_c", "Whitespace characters", "MANDATORY", "Tests space, newline, and tab characters",
+		"\"[%c][%c][%c]\", ' ', '\\n', '\\t'", "ret: 9, output: \"[ ][\\n][\\t]\"", "ft_printf(\"[%c][%c][%c]\", ' ', '\\n', '\\t');", test_c_space_newline},
+	{"printf_c_multiple", "ft_printf_c", "Multiple characters", "MANDATORY", "Tests multiple %c specifiers in one call",
+		"\"%c %c %c\", 'A', 'B', 'C'", "ret: 5, output: \"A B C\"", "ft_printf(\"%c %c %c\", 'A', 'B', 'C');", test_c_multiple},
+	{"printf_c_extended", "ft_printf_c", "Extended ASCII boundaries", "MANDATORY", "Tests characters 127 and -1",
+		"\"%c%c\", (char)127, (char)-1", "ret: 2", "ft_printf(\"%c%c\", (char)127, (char)-1);", test_c_extended},
+
+	/* --- ft_printf_s.c --- */
+	{"printf_s_simple", "ft_printf_s", "Standard string", "MANDATORY", "Tests printing a simple ASCII string",
+		"\"Hello, %s!\", \"42\"", "ret: 11, output: \"Hello, 42!\"", "ft_printf(\"Hello, %s!\", \"42\");", test_s_simple},
+	{"printf_s_empty", "ft_printf_s", "Empty string", "MANDATORY", "Tests printing empty string \"\"",
+		"\"Empty: '%s'\", \"\"", "ret: 9, output: \"Empty: ''\"", "ft_printf(\"Empty: '%s'\", \"\");", test_s_empty},
+	{"printf_s_null", "ft_printf_s", "NULL string pointer", "MANDATORY", "Tests printing (char *)NULL as (null) with ret 6",
+		"\"NULL: %s\", (char *)NULL", "ret: 12, output: \"NULL: (null)\"", "ft_printf(\"NULL: %s\", NULL);", test_s_null},
+	{"printf_s_multiple", "ft_printf_s", "Multiple strings", "MANDATORY", "Tests multiple %s in one format",
+		"\"%s %s %s\", \"42\", \"Network\", \"Lausanne\"", "ret: 19, output: \"42 Network Lausanne\"", "ft_printf(\"%s %s %s\", \"42\", \"Network\", \"Lausanne\");", test_s_multiple},
+	{"printf_s_long", "ft_printf_s", "Long string buffer", "MANDATORY", "Tests printing a 400+ character string",
+		"Lorem ipsum paragraph", "ret: 451", "ft_printf(\"Long: %s\", lorem_ipsum);", test_s_long},
+	{"printf_s_special", "ft_printf_s", "String with escape sequences", "MANDATORY", "Tests string containing newlines, tabs, and quotes",
+		"\"Special: %s\", \"Line1\\nLine2\\tTab\\\\Backslash\\\"Quote\\\"\"", "Matches printf output", "ft_printf(\"Special: %s\", \"Line1\\nLine2\\tTab...\");", test_s_special},
+
+	/* --- ft_printf_p.c --- */
+	{"printf_p_null", "ft_printf_p", "NULL pointer", "MANDATORY", "Tests %p with (void *)0",
+		"\"%p\", NULL", "output: \"(nil)\" (ret 5) or \"0x0\" (ret 3)", "ft_printf(\"%p\", NULL);", test_p_null},
+	{"printf_p_address", "ft_printf_p", "Stack memory address", "MANDATORY", "Tests %p with valid stack address",
+		"\"Address: %p\", &val", "ret: matches printf, prefix: 0x", "int val = 42; ft_printf(\"Address: %p\", (void*)&val);", test_p_address},
+	{"printf_p_small", "ft_printf_p", "Small pointer value", "MANDATORY", "Tests %p with address (void *)16",
+		"\"%p\", (void *)16", "output: \"0x10\"", "ft_printf(\"%p\", (void *)16);", test_p_small},
+	{"printf_p_large", "ft_printf_p", "High 64-bit address", "MANDATORY", "Tests %p with high 64-bit memory address",
+		"\"%p\", (void *)0x7ffeefbff568ULL", "output: \"0x7ffeefbff568\"", "ft_printf(\"%p\", (void *)0x7ffeefbff568ULL);", test_p_large},
+	{"printf_p_multiple", "ft_printf_p", "Multiple pointer arguments", "MANDATORY", "Tests formatting two pointers in one call",
+		"\"%p -> %p\", &a, &b", "ret: matches printf", "ft_printf(\"%p -> %p\", (void*)&a, (void*)&b);", test_p_multiple},
+
+	/* --- ft_printf_di.c --- */
+	{"printf_di_zero", "ft_printf_di", "Zero integer values", "MANDATORY", "Tests %d and %i with zero (0, -0)",
+		"\"Zero: %d, %i\", 0, -0", "ret: 12, output: \"Zero: 0, 0\"", "ft_printf(\"Zero: %d, %i\", 0, -0);", test_di_zero},
+	{"printf_di_positive", "ft_printf_di", "Standard positive integers", "MANDATORY", "Tests positive numbers 42 and 123456789",
+		"\"Pos: %d, %i\", 42, 123456789", "ret: 20, output: \"Pos: 42, 123456789\"", "ft_printf(\"Pos: %d, %i\", 42, 123456789);", test_di_positive},
+	{"printf_di_negative", "ft_printf_di", "Standard negative integers", "MANDATORY", "Tests negative numbers -42 and -987654321",
+		"\"Neg: %d, %i\", -42, -987654321", "ret: 22, output: \"Neg: -42, -987654321\"", "ft_printf(\"Neg: %d, %i\", -42, -987654321);", test_di_negative},
+	{"printf_di_int_max", "ft_printf_di", "INT_MAX boundary", "MANDATORY", "Tests INT_MAX (2147483647)",
+		"\"INT_MAX: %d\", 2147483647", "ret: 19, output: \"INT_MAX: 2147483647\"", "ft_printf(\"INT_MAX: %d\", 2147483647);", test_di_int_max},
+	{"printf_di_int_min", "ft_printf_di", "INT_MIN boundary (overflow check)", "MANDATORY", "Tests INT_MIN (-2147483648)",
+		"\"INT_MIN: %d\", -2147483648", "ret: 20, output: \"INT_MIN: -2147483648\"", "ft_printf(\"INT_MIN: %d\", -2147483648);", test_di_int_min},
+	{"printf_di_edges", "ft_printf_di", "Near-boundary numbers", "MANDATORY", "Tests INT_MAX - 1 and INT_MIN + 1",
+		"\"Edges: %d, %d\", 2147483646, -2147483647", "ret: 30", "ft_printf(\"Edges: %d, %d\", 2147483646, -2147483647);", test_di_edges},
+	{"printf_di_multiple", "ft_printf_di", "Equation with multiple integers", "MANDATORY", "Tests three integer arguments",
+		"\"%d + %d = %i\", 20, 22, 42", "ret: 12, output: \"20 + 22 = 42\"", "ft_printf(\"%d + %d = %i\", 20, 22, 42);", test_di_multiple},
+	{"printf_di_interleaved", "ft_printf_di", "Interleaved positive and negative", "MANDATORY", "Tests %i and %d interleaved",
+		"\"%i %d %i %d\", 1, -1, 100, -100", "ret: 15, output: \"1 -1 100 -100\"", "ft_printf(\"%i %d %i %d\", 1, -1, 100, -100);", test_di_interleaved},
+
+	/* --- ft_printf_u.c --- */
+	{"printf_u_zero", "ft_printf_u", "Unsigned zero", "MANDATORY", "Tests %u with 0U",
+		"\"Unsigned zero: %u\", 0U", "ret: 16, output: \"Unsigned zero: 0\"", "ft_printf(\"Unsigned zero: %u\", 0U);", test_u_zero},
+	{"printf_u_positive", "ft_printf_u", "Unsigned positive value", "MANDATORY", "Tests %u with 42U",
+		"\"Unsigned pos: %u\", 42U", "ret: 16, output: \"Unsigned pos: 42\"", "ft_printf(\"Unsigned pos: %u\", 42U);", test_u_positive},
+	{"printf_u_uint_max", "ft_printf_u", "UINT_MAX boundary", "MANDATORY", "Tests %u with UINT_MAX (4294967295U)",
+		"\"UINT_MAX: %u\", 4294967295U", "ret: 20, output: \"UINT_MAX: 4294967295\"", "ft_printf(\"UINT_MAX: %u\", UINT_MAX);", test_u_uint_max},
+	{"printf_u_negative_cast", "ft_printf_u", "Negative value cast to unsigned", "MANDATORY", "Tests %u with -1 and -42 cast to unsigned",
+		"\"Cast: %u, %u\", (unsigned)-1, (unsigned)-42", "ret: 23, output: \"Cast: 4294967295, 4294967254\"", "ft_printf(\"Cast: %u, %u\", (unsigned)-1, (unsigned)-42);", test_u_negative_cast},
+	{"printf_u_multiple", "ft_printf_u", "Multiple unsigned values", "MANDATORY", "Tests multiple %u values",
+		"\"%u / %u = %u\", 42U, 100U, 1000000000U", "ret: 21, output: \"42 / 100 = 1000000000\"", "ft_printf(\"%u / %u = %u\", 42U, 100U, 1000000000U);", test_u_multiple},
+
+	/* --- ft_printf_x.c --- */
+	{"printf_x_zero", "ft_printf_x", "Hexadecimal lowercase zero", "MANDATORY", "Tests %x with 0",
+		"\"Hex zero: %x\", 0", "ret: 12, output: \"Hex zero: 0\"", "ft_printf(\"Hex zero: %x\", 0);", test_x_zero},
+	{"printf_x_single_digit", "ft_printf_x", "Single lowercase hex digits", "MANDATORY", "Tests %x with 1, 10 (a), 15 (f)",
+		"\"%x %x %x\", 1, 10, 15", "ret: 5, output: \"1 a f\"", "ft_printf(\"%x %x %x\", 1, 10, 15);", test_x_single_digit},
+	{"printf_x_two_digits", "ft_printf_x", "Two-digit lowercase hex values", "MANDATORY", "Tests %x with 16 (10), 42 (2a), 255 (ff)",
+		"\"%x %x %x\", 16, 42, 255", "ret: 8, output: \"10 2a ff\"", "ft_printf(\"%x %x %x\", 16, 42, 255);", test_x_two_digits},
+	{"printf_x_uint_max", "ft_printf_x", "UINT_MAX in lowercase hex", "MANDATORY", "Tests %x with UINT_MAX (ffffffff)",
+		"\"Hex UINT_MAX: %x\", UINT_MAX", "ret: 22, output: \"Hex UINT_MAX: ffffffff\"", "ft_printf(\"Hex UINT_MAX: %x\", UINT_MAX);", test_x_uint_max},
+	{"printf_x_patterns", "ft_printf_x", "Multi-byte lowercase patterns", "MANDATORY", "Tests %x with 0x12345678 and 0xabcdef01",
+		"\"Pattern: %x, %x\", 0x12345678, 0xabcdef01", "ret: 27, output: \"Pattern: 12345678, abcdef01\"", "ft_printf(\"Pattern: %x, %x\", 0x12345678, 0xabcdef01);", test_x_patterns},
+	{"printf_x_multiple", "ft_printf_x", "Multiple lowercase hex with prefixes", "MANDATORY", "Tests %x formatted with 0x prefixes",
+		"\"0x%x 0x%x 0x%x\", 0, 42, 3735928559U", "ret: 18, output: \"0x0 0x2a 0xdeadbeef\"", "ft_printf(\"0x%x 0x%x 0x%x\", 0, 42, 3735928559U);", test_x_multiple},
+
+	/* --- ft_printf_X.c --- */
+	{"printf_X_zero", "ft_printf_X", "Hexadecimal uppercase zero", "MANDATORY", "Tests %X with 0",
+		"\"Hex upper zero: %X\", 0", "ret: 18, output: \"Hex upper zero: 0\"", "ft_printf(\"Hex upper zero: %X\", 0);", test_X_zero},
+	{"printf_X_single_digit", "ft_printf_X", "Single uppercase hex digits", "MANDATORY", "Tests %X with 1, 10 (A), 15 (F)",
+		"\"%X %X %X\", 1, 10, 15", "ret: 5, output: \"1 A F\"", "ft_printf(\"%X %X %X\", 1, 10, 15);", test_X_single_digit},
+	{"printf_X_two_digits", "ft_printf_X", "Two-digit uppercase hex values", "MANDATORY", "Tests %X with 16 (10), 42 (2A), 255 (FF)",
+		"\"%X %X %X\", 16, 42, 255", "ret: 8, output: \"10 2A FF\"", "ft_printf(\"%X %X %X\", 16, 42, 255);", test_X_two_digits},
+	{"printf_X_uint_max", "ft_printf_X", "UINT_MAX in uppercase hex", "MANDATORY", "Tests %X with UINT_MAX (FFFFFFFF)",
+		"\"Hex UINT_MAX: %X\", UINT_MAX", "ret: 22, output: \"Hex UINT_MAX: FFFFFFFF\"", "ft_printf(\"Hex UINT_MAX: %X\", UINT_MAX);", test_X_uint_max},
+	{"printf_X_patterns", "ft_printf_X", "Multi-byte uppercase patterns", "MANDATORY", "Tests %X with 0x12345678 and 0xABCDEF01",
+		"\"Pattern: %X, %X\", 0x12345678, 0xABCDEF01", "ret: 27, output: \"Pattern: 12345678, ABCDEF01\"", "ft_printf(\"Pattern: %X, %X\", 0x12345678, 0xABCDEF01);", test_X_patterns},
+	{"printf_X_multiple", "ft_printf_X", "Multiple uppercase hex with prefixes", "MANDATORY", "Tests %X formatted with 0x prefixes",
+		"\"0x%X 0x%X 0x%X\", 0, 42, 3735928559U", "ret: 18, output: \"0x0 0x2A 0xDEADBEEF\"", "ft_printf(\"0x%X 0x%X 0x%X\", 0, 42, 3735928559U);", test_X_multiple},
+
+	/* --- ft_printf_percent.c --- */
+	{"printf_pct_single", "ft_printf_percent", "Single escaped percent (%%)", "MANDATORY", "Tests %% producing a single %",
+		"\"%%\"", "ret: 1, output: \"%\"", "ft_printf(\"%%\");", test_pct_single},
+	{"printf_pct_double", "ft_printf_percent", "Double percent pair (%%%%)", "MANDATORY", "Tests %%%% producing %%",
+		"\"%%%%\"", "ret: 2, output: \"%%\"", "ft_printf(\"%%%%\");", test_pct_double},
+	{"printf_pct_spaced", "ft_printf_percent", "Spaced percent signs", "MANDATORY", "Tests \"%% %% %%\" producing \"% % %\"",
+		"\"%% %% %%\"", "ret: 5, output: \"% % %\"", "ft_printf(\"%% %% %%\");", test_pct_spaced},
+	{"printf_pct_surrounded", "ft_printf_percent", "Percent in text sentence", "MANDATORY", "Tests percent within surrounding text",
+		"\"100%% guaranteed %% bonus\"", "ret: 24, output: \"100% guaranteed % bonus\"", "ft_printf(\"100%% guaranteed %% bonus\");", test_pct_surrounded},
+	{"printf_pct_mixed", "ft_printf_percent", "Percent adjacent to conversion", "MANDATORY", "Tests \"%%%d%%%%s%%\" with value 42",
+		"\"%%%d%%%%s%%\", 42", "ret: 7, output: \"%42%s%\"", "ft_printf(\"%%%d%%%%s%%\", 42);", test_pct_mixed},
+
+	/* --- ft_printf_mixed.c --- */
+	{"printf_mixed_plain", "ft_printf_mixed", "Plain text with no conversions", "MANDATORY", "Tests printing static text without format tags",
+		"\"Hello, World! 42 Network.\"", "ret: 26, output: \"Hello, World! 42 Network.\"", "ft_printf(\"Hello, World! 42 Network.\");", test_mixed_plain},
+	{"printf_mixed_empty", "ft_printf_mixed", "Empty format string", "MANDATORY", "Tests empty string \"\"",
+		"\"\"", "ret: 0, output: \"\"", "ft_printf(\"\");", test_mixed_empty},
+	{"printf_mixed_all_conversions", "ft_printf_mixed", "All conversions combined", "MANDATORY", "Tests %c, %s, %p, %d, %i, %u, %x, %X, %% in one call",
+		"All 9 mandatory conversions", "Matches libc printf", "ft_printf(\"c:%c s:%s p:%p d:%d i:%i u:%u x:%x X:%X %%:%%\", ...);", test_mixed_all_conversions},
+	{"printf_mixed_consecutive", "ft_printf_mixed", "Back-to-back conversions without spaces", "MANDATORY", "Tests \"%c%s%d%u%x%X%%\"",
+		"\"%c%s%d%u%x%X%%\", 'A', \"BCD\", 12, 34U, 0xef, 0xEF", "ret: 13, output: \"ABCD1234efEF%\"", "ft_printf(\"%c%s%d%u%x%X%%\", 'A', \"BCD\", 12, 34U, 0xef, 0xEF);", test_mixed_consecutive},
+	{"printf_mixed_escape_chars", "ft_printf_mixed", "Embedded escape characters", "MANDATORY", "Tests \\n, \\t, \\\", \\r, \\\\ alongside conversions",
+		"\"Escapes:\\n\\t\\\"quote\\\"\\r\\\\slash\\\\ %d%%\\n\", 100", "Matches libc printf", "ft_printf(\"Escapes:\\n\\t... %d%%\\n\", 100);", test_mixed_escape_chars},
+	{"printf_mixed_long_format", "ft_printf_mixed", "Comprehensive multi-field sentence", "MANDATORY", "Tests long format string with multiple values",
+		"Long multi-field sentence", "Matches libc printf", "ft_printf(\"Part1: %s, Part2: %d, ...\", ...);", test_mixed_long_format},
+};
+
+static const size_t g_num_tests = sizeof(g_tests) / sizeof(g_tests[0]);
+
+int main(int argc, char **argv) {
+	if (argc < 2) {
+		fprintf(stderr, "Usage: %s <list|run <id>>\n", argv[0]);
+		return 1;
+	}
+
+	if (strcmp(argv[1], "list") == 0) {
+		for (size_t i = 0; i < g_num_tests; i++) {
+			printf("%s\t%s\t%s\t%s\t%s\n",
+				g_tests[i].id,
+				g_tests[i].module,
+				g_tests[i].name,
+				g_tests[i].category,
+				g_tests[i].desc);
+		}
+		return 0;
+	}
+
+	if (strcmp(argv[1], "run") == 0 && argc >= 3) {
+		const char *target_id = argv[2];
+		for (size_t i = 0; i < g_num_tests; i++) {
+			if (strcmp(g_tests[i].id, target_id) == 0) {
+				char exp[512] = {0};
+				char act[512] = {0};
+				char expl[512] = {0};
+				char adv[512] = {0};
+
+				int pass = g_tests[i].fn(exp, act, expl, adv);
+				if (pass) {
+					printf("STATUS: PASS\n");
+					if (!exp[0] && g_tests[i].expected) {
+						snprintf(exp, sizeof(exp), "%s", g_tests[i].expected);
+					}
+					if (!act[0]) {
+						snprintf(act, sizeof(act), "%s", exp[0] ? exp : "Success: matches printf behavior");
+					}
+				} else {
+					printf("STATUS: FAIL\n");
+				}
+				if (g_tests[i].input) {
+					printf("INPUT: %s\n", g_tests[i].input);
+				}
+				if (exp[0]) {
+					printf("EXPECTED: %s\n", exp);
+				}
+				if (act[0]) {
+					printf("ACTUAL: %s\n", act);
+				}
+				if (expl[0]) {
+					printf("EXPLANATION: %s\n", expl);
+				}
+				if (adv[0]) {
+					printf("ADVICE: %s\n", adv);
+				}
+				if (g_tests[i].code) {
+					printf("CODE_START\n%s\nCODE_END\n", g_tests[i].code);
+				}
+				return pass ? 0 : 1;
+			}
+		}
+		fprintf(stderr, "Unknown test id: %s\n", target_id);
+		return 2;
+	}
+
+	return 1;
+}
