@@ -189,6 +189,55 @@ static int test_isprint(char *exp, char *act, char *expl, char *adv) {
 	return 1;
 }
 
+/* --- toupper & tolower --- */
+static int test_toupper(char *exp, char *act, char *expl, char *adv) {
+	for (int c = 'a'; c <= 'z'; c++) {
+		if (ft_toupper(c) != c - 32) {
+			snprintf(exp, 128, "'%c'", c - 32);
+			snprintf(act, 128, "'%c'", ft_toupper(c));
+			snprintf(expl, 256, "ft_toupper failed to convert lowercase '%c'", c);
+			snprintf(adv, 256, "Uppercase is c - 32 (or c - 'a' + 'A').");
+			return 0;
+		}
+	}
+	int untouched[] = {'A', 'Z', '0', '9', ' ', '!', 0, 127, 200};
+	for (size_t i = 0; i < sizeof(untouched)/sizeof(untouched[0]); i++) {
+		int c = untouched[i];
+		if (ft_toupper(c) != c) {
+			snprintf(exp, 128, "%d", c);
+			snprintf(act, 128, "%d", ft_toupper(c));
+			snprintf(expl, 256, "ft_toupper modified non-lowercase character %d", c);
+			snprintf(adv, 256, "Only convert characters if c >= 'a' && c <= 'z'.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int test_tolower(char *exp, char *act, char *expl, char *adv) {
+	for (int c = 'A'; c <= 'Z'; c++) {
+		if (ft_tolower(c) != c + 32) {
+			snprintf(exp, 128, "'%c'", c + 32);
+			snprintf(act, 128, "'%c'", ft_tolower(c));
+			snprintf(expl, 256, "ft_tolower failed to convert uppercase '%c'", c);
+			snprintf(adv, 256, "Lowercase is c + 32 (or c - 'A' + 'a').");
+			return 0;
+		}
+	}
+	int untouched[] = {'a', 'z', '0', '9', ' ', '!', 0, 127, 200};
+	for (size_t i = 0; i < sizeof(untouched)/sizeof(untouched[0]); i++) {
+		int c = untouched[i];
+		if (ft_tolower(c) != c) {
+			snprintf(exp, 128, "%d", c);
+			snprintf(act, 128, "%d", ft_tolower(c));
+			snprintf(expl, 256, "ft_tolower modified non-uppercase character %d", c);
+			snprintf(adv, 256, "Only convert characters if c >= 'A' && c <= 'Z'.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
 /* --- strlen --- */
 static int test_strlen(char *exp, char *act, char *expl, char *adv) {
 	if (ft_strlen("") != 0) {
@@ -833,107 +882,286 @@ static int test_striteri(char *exp, char *act, char *expl, char *adv) {
 }
 
 /* --- putchar_fd, putstr_fd, putendl_fd, putnbr_fd --- */
-static int test_put_fd(char *exp, char *act, char *expl, char *adv) {
+static int test_putchar_fd(char *exp, char *act, char *expl, char *adv) {
 	int p[2];
 	if (pipe(p) < 0) return 1;
-
-	ft_putchar_fd('X', p[1]);
-	ft_putstr_fd("42", p[1]);
-	ft_putendl_fd("End", p[1]);
-	ft_putnbr_fd(-2147483648, p[1]);
+	ft_putchar_fd('Z', p[1]);
 	close(p[1]);
-
-	char buf[64] = {0};
-	ssize_t bytes = read(p[0], buf, sizeof(buf) - 1);
+	char c = 0;
+	ssize_t n = read(p[0], &c, 1);
 	close(p[0]);
-
-	const char *expected = "X42End\n-2147483648";
-	if (bytes < 0 || strcmp(buf, expected) != 0) {
-		snprintf(exp, 128, "'%s'", expected);
-		snprintf(act, 128, "'%s'", buf);
-		snprintf(expl, 256, "ft_put*_fd outputs do not match expected pipe data");
-		snprintf(adv, 256, "Use write(fd, ...) for all put*_fd functions.");
+	if (n != 1 || c != 'Z') {
+		snprintf(exp, 128, "'Z'");
+		snprintf(act, 128, "'%c' (bytes read: %zd)", c, n);
+		snprintf(expl, 256, "ft_putchar_fd failed to write single byte to fd");
+		snprintf(adv, 256, "Use write(fd, &c, 1).");
 		return 0;
 	}
 	return 1;
 }
 
-/* --- Bonus: t_list tests --- */
-static int test_bonus_lists(char *exp, char *act, char *expl, char *adv) {
-	/* lstnew */
-	t_list *elem1 = ft_lstnew(strdup("first"));
-	if (!elem1 || strcmp((char*)elem1->content, "first") != 0 || elem1->next != NULL) {
-		snprintf(exp, 128, "Node with content 'first', next == NULL");
-		snprintf(act, 128, "Invalid node");
-		snprintf(expl, 256, "ft_lstnew failed initialization");
-		snprintf(adv, 256, "Set node->content = content and node->next = NULL.");
+static int test_putstr_fd(char *exp, char *act, char *expl, char *adv) {
+	int p[2];
+	if (pipe(p) < 0) return 1;
+	ft_putstr_fd("42 Lausanne", p[1]);
+	close(p[1]);
+	char buf[32] = {0};
+	ssize_t n = read(p[0], buf, sizeof(buf) - 1);
+	close(p[0]);
+	if (n != 11 || strcmp(buf, "42 Lausanne") != 0) {
+		snprintf(exp, 128, "'42 Lausanne'");
+		snprintf(act, 128, "'%s'", buf);
+		snprintf(expl, 256, "ft_putstr_fd failed to write string to fd");
+		snprintf(adv, 256, "Use write(fd, s, ft_strlen(s)).");
 		return 0;
 	}
+	return 1;
+}
 
-	/* lstadd_front */
-	t_list *head = elem1;
-	t_list *elem0 = ft_lstnew(strdup("zero"));
+static int test_putendl_fd(char *exp, char *act, char *expl, char *adv) {
+	int p[2];
+	if (pipe(p) < 0) return 1;
+	ft_putendl_fd("Line 1", p[1]);
+	close(p[1]);
+	char buf[32] = {0};
+	ssize_t n = read(p[0], buf, sizeof(buf) - 1);
+	close(p[0]);
+	if (n != 7 || strcmp(buf, "Line 1\n") != 0) {
+		snprintf(exp, 128, "'Line 1\\n'");
+		snprintf(act, 128, "'%s'", buf);
+		snprintf(expl, 256, "ft_putendl_fd did not append '\\n'");
+		snprintf(adv, 256, "Write string then write newline '\\n'.");
+		return 0;
+	}
+	return 1;
+}
+
+static int test_putnbr_fd(char *exp, char *act, char *expl, char *adv) {
+	int cases[] = {0, 42, -42, INT_MAX, INT_MIN};
+	const char *expected[] = {"0", "42", "-42", "2147483647", "-2147483648"};
+	for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); i++) {
+		int p[2];
+		if (pipe(p) < 0) continue;
+		ft_putnbr_fd(cases[i], p[1]);
+		close(p[1]);
+		char buf[32] = {0};
+		ssize_t n = read(p[0], buf, sizeof(buf) - 1);
+		close(p[0]);
+		if (n <= 0 || strcmp(buf, expected[i]) != 0) {
+			snprintf(exp, 128, "'%s'", expected[i]);
+			snprintf(act, 128, "'%s'", buf);
+			snprintf(expl, 256, "ft_putnbr_fd failed for %d", cases[i]);
+			snprintf(adv, 256, "Carefully handle INT_MIN (-2147483648): -n overflows in 32-bit int!");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+#ifdef HAS_BONUS
+/* --- Bonus: t_list tests --- */
+static int test_lstnew(char *exp, char *act, char *expl, char *adv) {
+	char str[] = "hello";
+	t_list *elem = ft_lstnew(str);
+	if (!elem || elem->content != str || elem->next != NULL) {
+		snprintf(exp, 128, "node->content == 'hello', node->next == NULL");
+		snprintf(act, 128, "Invalid node or NULL");
+		snprintf(expl, 256, "ft_lstnew failed initialization");
+		snprintf(adv, 256, "Allocate node, set node->content = content and node->next = NULL.");
+		if (elem) free(elem);
+		return 0;
+	}
+	free(elem);
+
+	t_list *elem_null = ft_lstnew(NULL);
+	if (!elem_null || elem_null->content != NULL || elem_null->next != NULL) {
+		snprintf(exp, 128, "node->content == NULL, node->next == NULL");
+		snprintf(act, 128, "Invalid node");
+		snprintf(expl, 256, "ft_lstnew failed with content == NULL");
+		snprintf(adv, 256, "Allow NULL content pointer.");
+		if (elem_null) free(elem_null);
+		return 0;
+	}
+	free(elem_null);
+	return 1;
+}
+
+static int test_lstadd_front(char *exp, char *act, char *expl, char *adv) {
+	t_list *head = NULL;
+	t_list *elem1 = ft_lstnew("first");
+	ft_lstadd_front(&head, elem1);
+	if (head != elem1 || head->next != NULL) {
+		snprintf(exp, 128, "head == elem1, next == NULL");
+		snprintf(act, 128, "Incorrect head linkage");
+		snprintf(expl, 256, "ft_lstadd_front failed when adding to empty list (*lst == NULL)");
+		snprintf(adv, 256, "If !*lst, *lst = new; else { new->next = *lst; *lst = new; }");
+		free(elem1);
+		return 0;
+	}
+	t_list *elem0 = ft_lstnew("zero");
 	ft_lstadd_front(&head, elem0);
 	if (head != elem0 || head->next != elem1) {
-		snprintf(exp, 128, "elem0 at head, followed by elem1");
-		snprintf(act, 128, "Incorrect head linkage");
-		snprintf(expl, 256, "ft_lstadd_front failed");
+		snprintf(exp, 128, "head == elem0, elem0->next == elem1");
+		snprintf(act, 128, "Incorrect linkage");
+		snprintf(expl, 256, "ft_lstadd_front failed to prepend node");
 		snprintf(adv, 256, "new->next = *lst; *lst = new;");
+		free(elem0);
+		free(elem1);
 		return 0;
 	}
+	free(elem0);
+	free(elem1);
+	return 1;
+}
 
-	/* lstsize */
-	if (ft_lstsize(head) != 2 || ft_lstsize(NULL) != 0) {
-		snprintf(exp, 128, "Size 2 and 0 for NULL");
-		snprintf(act, 128, "Size %d", ft_lstsize(head));
+static int test_lstsize(char *exp, char *act, char *expl, char *adv) {
+	if (ft_lstsize(NULL) != 0) {
+		snprintf(exp, 128, "0 for NULL");
+		snprintf(act, 128, "%d", ft_lstsize(NULL));
+		snprintf(expl, 256, "ft_lstsize(NULL) must return 0");
+		snprintf(adv, 256, "Handle lst == NULL gracefully.");
+		return 0;
+	}
+	t_list e3 = {.content = "3", .next = NULL};
+	t_list e2 = {.content = "2", .next = &e3};
+	t_list e1 = {.content = "1", .next = &e2};
+	if (ft_lstsize(&e1) != 3 || ft_lstsize(&e2) != 2 || ft_lstsize(&e3) != 1) {
+		snprintf(exp, 128, "3, 2, 1");
+		snprintf(act, 128, "%d", ft_lstsize(&e1));
 		snprintf(expl, 256, "ft_lstsize returned incorrect count");
-		snprintf(adv, 256, "Iterate and count nodes.");
+		snprintf(adv, 256, "Count nodes by advancing lst = lst->next.");
 		return 0;
 	}
+	return 1;
+}
 
-	/* lstlast */
-	if (ft_lstlast(head) != elem1 || ft_lstlast(NULL) != NULL) {
-		snprintf(exp, 128, "elem1 as last node");
+static int test_lstlast(char *exp, char *act, char *expl, char *adv) {
+	if (ft_lstlast(NULL) != NULL) {
+		snprintf(exp, 128, "NULL");
+		snprintf(act, 128, "%p", (void*)ft_lstlast(NULL));
+		snprintf(expl, 256, "ft_lstlast(NULL) must return NULL");
+		snprintf(adv, 256, "If !lst, return NULL.");
+		return 0;
+	}
+	t_list e3 = {.content = "3", .next = NULL};
+	t_list e2 = {.content = "2", .next = &e3};
+	t_list e1 = {.content = "1", .next = &e2};
+	if (ft_lstlast(&e1) != &e3) {
+		snprintf(exp, 128, "%p (e3)", (void*)&e3);
+		snprintf(act, 128, "%p", (void*)ft_lstlast(&e1));
+		snprintf(expl, 256, "ft_lstlast did not return the last node");
+		snprintf(adv, 256, "Loop while (lst->next) lst = lst->next.");
+		return 0;
+	}
+	return 1;
+}
+
+static int test_lstadd_back(char *exp, char *act, char *expl, char *adv) {
+	t_list *head = NULL;
+	t_list *e1 = ft_lstnew("1");
+	ft_lstadd_back(&head, e1);
+	if (head != e1 || head->next != NULL) {
+		snprintf(exp, 128, "head == e1");
 		snprintf(act, 128, "Mismatch");
-		snprintf(expl, 256, "ft_lstlast failed");
-		snprintf(adv, 256, "Iterate while lst->next != NULL.");
+		snprintf(expl, 256, "ft_lstadd_back failed when list is empty (*lst == NULL)");
+		snprintf(adv, 256, "If *lst == NULL, *lst = new; return;");
+		free(e1);
 		return 0;
 	}
-
-	/* lstadd_back */
-	t_list *elem2 = ft_lstnew(strdup("second"));
-	ft_lstadd_back(&head, elem2);
-	if (ft_lstlast(head) != elem2 || ft_lstsize(head) != 3) {
-		snprintf(exp, 128, "elem2 at tail of list, size 3");
+	t_list *e2 = ft_lstnew("2");
+	ft_lstadd_back(&head, e2);
+	if (e1->next != e2 || e2->next != NULL) {
+		snprintf(exp, 128, "e1->next == e2");
 		snprintf(act, 128, "Mismatch");
-		snprintf(expl, 256, "ft_lstadd_back failed to append node");
-		snprintf(adv, 256, "Find last node and link last->next = new.");
+		snprintf(expl, 256, "ft_lstadd_back failed to append node to existing list");
+		snprintf(adv, 256, "Find last node and set last->next = new.");
+		free(e1);
+		free(e2);
 		return 0;
 	}
+	free(e1);
+	free(e2);
+	return 1;
+}
 
-	/* lstmap */
-	t_list *mapped = ft_lstmap(head, map_dup, free);
-	if (!mapped || ft_lstsize(mapped) != 3) {
-		snprintf(exp, 128, "New list of size 3");
-		snprintf(act, 128, "NULL or wrong size");
-		snprintf(expl, 256, "ft_lstmap failed to clone and map list");
-		snprintf(adv, 256, "Iterate, apply f(), create new nodes, handle failure with ft_lstclear.");
+static int test_lstdelone(char *exp, char *act, char *expl, char *adv) {
+	char *cnt = strdup("payload");
+	t_list *node = ft_lstnew(cnt);
+	g_del_count = 0;
+	ft_lstdelone(node, del_counter);
+	if (g_del_count != 1) {
+		snprintf(exp, 128, "del called once (del_count == 1)");
+		snprintf(act, 128, "del_count == %d", g_del_count);
+		snprintf(expl, 256, "ft_lstdelone did not invoke del function");
+		snprintf(adv, 256, "del(node->content); free(node);");
 		return 0;
 	}
-	ft_lstclear(&mapped, free);
+	return 1;
+}
 
-	/* lstclear & del */
+static int test_lstclear(char *exp, char *act, char *expl, char *adv) {
+	t_list *head = ft_lstnew(strdup("a"));
+	head->next = ft_lstnew(strdup("b"));
+	head->next->next = ft_lstnew(strdup("c"));
 	g_del_count = 0;
 	ft_lstclear(&head, del_counter);
 	if (head != NULL || g_del_count != 3) {
 		snprintf(exp, 128, "head == NULL, 3 deletions");
 		snprintf(act, 128, "head = %p, del_count = %d", (void*)head, g_del_count);
-		snprintf(expl, 256, "ft_lstclear did not delete all elements or did not set *lst = NULL");
-		snprintf(adv, 256, "Call del() on each content, free node, and set *lst = NULL.");
+		snprintf(expl, 256, "ft_lstclear failed to clear all nodes or set *lst to NULL");
+		snprintf(adv, 256, "Loop through list, del(content), free node, and set *lst = NULL.");
 		return 0;
 	}
+	/* NULL checks */
+	ft_lstclear(NULL, del_counter);
+	t_list *null_head = NULL;
+	ft_lstclear(&null_head, del_counter);
 	return 1;
 }
+
+static void iter_concat(void *content) {
+	char *s = (char*)content;
+	if (s && *s) *s = (char)(*s + 1);
+}
+
+static int test_lstiter(char *exp, char *act, char *expl, char *adv) {
+	char str1[] = "a";
+	char str2[] = "b";
+	t_list *head = ft_lstnew(str1);
+	head->next = ft_lstnew(str2);
+	ft_lstiter(head, iter_concat);
+	if (str1[0] != 'b' || str2[0] != 'c') {
+		snprintf(exp, 128, "'b', 'c'");
+		snprintf(act, 128, "'%c', '%c'", str1[0], str2[0]);
+		snprintf(expl, 256, "ft_lstiter failed to apply f to every node in order");
+		snprintf(adv, 256, "while (lst) { f(lst->content); lst = lst->next; }");
+		free(head->next);
+		free(head);
+		return 0;
+	}
+	free(head->next);
+	free(head);
+	return 1;
+}
+
+static int test_lstmap(char *exp, char *act, char *expl, char *adv) {
+	t_list *head = ft_lstnew(strdup("first"));
+	head->next = ft_lstnew(strdup("second"));
+	t_list *mapped = ft_lstmap(head, map_dup, free);
+	if (!mapped || ft_lstsize(mapped) != 2 || strcmp(mapped->content, "first") != 0 || strcmp(mapped->next->content, "second") != 0) {
+		snprintf(exp, 128, "Mapped list with 'first' and 'second'");
+		snprintf(act, 128, "Mismatch or NULL");
+		snprintf(expl, 256, "ft_lstmap failed to clone and map linked list");
+		snprintf(adv, 256, "Create new nodes with f(lst->content), link with ft_lstadd_back.");
+		ft_lstclear(&head, free);
+		if (mapped) ft_lstclear(&mapped, free);
+		return 0;
+	}
+	ft_lstclear(&head, free);
+	ft_lstclear(&mapped, free);
+	return 1;
+}
+#endif
 
 /* ========================================================================= */
 /* TEST TABLE                                                                */
@@ -948,6 +1176,8 @@ static const t_test_entry g_tests[] = {
 	{"libft_isalnum_invalid", "ft_isalnum", "Punctuation and whitespace", "MANDATORY", "Tests symbols and whitespace return 0", test_isalnum_invalid},
 	{"libft_isascii", "ft_isascii", "ASCII 7-bit boundaries [0, 127]", "MANDATORY", "Tests valid ASCII range 0-127 and out of bounds", test_isascii},
 	{"libft_isprint", "ft_isprint", "Printable ASCII range [32, 126]", "MANDATORY", "Tests printable chars and control codes return 0", test_isprint},
+	{"libft_toupper", "ft_toupper", "Lowercase to uppercase conversion", "MANDATORY", "Tests 'a'-'z' to 'A'-'Z' and non-alpha untouched", test_toupper},
+	{"libft_tolower", "ft_tolower", "Uppercase to lowercase conversion", "MANDATORY", "Tests 'A'-'Z' to 'a'-'z' and non-alpha untouched", test_tolower},
 	{"libft_strlen", "ft_strlen", "String length calculation", "MANDATORY", "Tests empty string and regular strings", test_strlen},
 	{"libft_memset", "ft_memset", "Memory byte fill and casting", "MANDATORY", "Tests filling memory buffer and unsigned char casting for c > 255", test_memset},
 	{"libft_bzero", "ft_bzero", "Zero out memory buffer", "MANDATORY", "Tests zeroing byte range without affecting surrounding bytes", test_bzero},
@@ -971,8 +1201,21 @@ static const t_test_entry g_tests[] = {
 	{"libft_itoa", "ft_itoa", "Integer to ASCII conversion and INT_MIN", "MANDATORY", "Tests 0, positive, negative, and INT_MIN (-2147483648)", test_itoa},
 	{"libft_strmapi", "ft_strmapi", "Apply indexed mapping function to string", "MANDATORY", "Tests function application with index parameter", test_strmapi},
 	{"libft_striteri", "ft_striteri", "Apply indexed in-place iterator to string", "MANDATORY", "Tests in-place modification with index parameter", test_striteri},
-	{"libft_put_fd", "ft_put_fd", "File descriptor output functions", "MANDATORY", "Tests ft_putchar_fd, ft_putstr_fd, ft_putendl_fd, ft_putnbr_fd via pipe", test_put_fd},
-	{"libft_bonus_lists", "t_list", "Linked list functions suite (Bonus)", "BONUS", "Tests ft_lstnew, ft_lstadd_front, ft_lstsize, ft_lstlast, ft_lstadd_back, ft_lstclear, ft_lstmap", test_bonus_lists},
+	{"libft_putchar_fd", "ft_putchar_fd", "Character output to file descriptor", "MANDATORY", "Tests writing char to pipe fd", test_putchar_fd},
+	{"libft_putstr_fd", "ft_putstr_fd", "String output to file descriptor", "MANDATORY", "Tests writing string to pipe fd", test_putstr_fd},
+	{"libft_putendl_fd", "ft_putendl_fd", "String output with newline to fd", "MANDATORY", "Tests writing string followed by newline to pipe fd", test_putendl_fd},
+	{"libft_putnbr_fd", "ft_putnbr_fd", "Integer output to file descriptor", "MANDATORY", "Tests 0, positive, negative, and INT_MIN to pipe fd", test_putnbr_fd},
+#ifdef HAS_BONUS
+	{"libft_lstnew", "ft_lstnew", "Create new list element", "BONUS", "Tests initialization of content and NULL next pointer", test_lstnew},
+	{"libft_lstadd_front", "ft_lstadd_front", "Prepend node to list head", "BONUS", "Tests adding to empty list and existing list", test_lstadd_front},
+	{"libft_lstsize", "ft_lstsize", "Count number of elements in list", "BONUS", "Tests empty list (0) and multi-node count", test_lstsize},
+	{"libft_lstlast", "ft_lstlast", "Locate last element in list", "BONUS", "Tests empty list (NULL) and tail node retrieval", test_lstlast},
+	{"libft_lstadd_back", "ft_lstadd_back", "Append node to list tail", "BONUS", "Tests adding to empty list and existing list", test_lstadd_back},
+	{"libft_lstdelone", "ft_lstdelone", "Delete single list node using del", "BONUS", "Tests del called on content and node freed", test_lstdelone},
+	{"libft_lstclear", "ft_lstclear", "Delete entire list and set head to NULL", "BONUS", "Tests clearing list, invoking del, and setting *lst = NULL", test_lstclear},
+	{"libft_lstiter", "ft_lstiter", "Iterate over list applying function f", "BONUS", "Tests applying function f to all nodes in order", test_lstiter},
+	{"libft_lstmap", "ft_lstmap", "Map function over list into new list", "BONUS", "Tests cloning and transforming list into new list", test_lstmap},
+#endif
 };
 
 static const size_t g_num_tests = sizeof(g_tests) / sizeof(g_tests[0]);

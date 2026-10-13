@@ -2,6 +2,7 @@ package libft
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -16,6 +17,9 @@ func TestLibftFullBatteryOnUserCode(t *testing.T) {
 	libftPath, err := filepath.Abs("../../../../libft")
 	if err != nil {
 		t.Fatalf("Failed to resolve libft path: %v", err)
+	}
+	if _, err := os.Stat(libftPath); os.IsNotExist(err) {
+		t.Skipf("Local libft project not found at %s, skipping integration test", libftPath)
 	}
 
 	suite := &Suite{}

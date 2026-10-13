@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -121,6 +122,15 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 
 	s.harnessPath = filepath.Join(workDir, "libft_harness")
 	extraFlags := []string{"-fsanitize=address,undefined", "-g"}
+
+	// Check if bonus functions were compiled into libft.a
+	nmCmd := exec.CommandContext(ctx, "nm", libPath)
+	if nmOut, err := nmCmd.Output(); err == nil {
+		if strings.Contains(string(nmOut), "ft_lstnew") {
+			extraFlags = append(extraFlags, "-DHAS_BONUS=1")
+		}
+	}
+
 	linkLibs := []string{"-L" + dir, "-lft"}
 	includeDirs := []string{dir}
 
