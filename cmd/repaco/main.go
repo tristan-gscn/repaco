@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/mattn/go-isatty"
@@ -59,6 +60,9 @@ func main() {
 		cfg.TargetDir = args[0]
 	} else {
 		cfg.TargetDir = "."
+	}
+	if absDir, err := filepath.Abs(cfg.TargetDir); err == nil {
+		cfg.TargetDir = absDir
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

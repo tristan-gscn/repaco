@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/tristan-gscn/repaco/internal/builder"
@@ -34,6 +35,10 @@ func New(cfg *config.Config) *Engine {
 // Run executes the complete testing pipeline and streams events to eventsChan.
 func (e *Engine) Run(ctx context.Context, eventsChan chan<- model.EngineEvent) (*model.SuiteResult, error) {
 	defer close(eventsChan)
+
+	if absDir, err := filepath.Abs(e.cfg.TargetDir); err == nil {
+		e.cfg.TargetDir = absDir
+	}
 
 	startTime := time.Now()
 
