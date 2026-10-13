@@ -36,11 +36,11 @@ static void iter_rot1(unsigned int i, char *c) {
 
 /* Helper del function for lists */
 static int g_del_count = 0;
-static void del_counter(void *content) {
+__attribute__((unused)) static void del_counter(void *content) {
 	(void)content;
 	g_del_count++;
 }
-static void *map_dup(void *content) {
+__attribute__((unused)) static void *map_dup(void *content) {
 	return strdup((char *)content);
 }
 

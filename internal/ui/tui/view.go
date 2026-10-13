@@ -539,45 +539,89 @@ func (m Model) renderDetailConsolePane(innerW, innerH int) string {
 	return panelStyle.Width(innerW).Height(innerH).Render(fitted)
 }
 
-// renderBottomBar renders the full-width solid progress bar on line 1, and the info metrics on line 2.
+// renderBottomBar renders the full-width segmented progress bar on line 1, and the info metrics on line 2.
 func (m Model) renderBottomBar(width int) string {
 	total := len(m.results)
 	if m.totalTests > total {
 		total = m.totalTests
 	}
 
-	var ratio float64
+	failedCount := m.stats.Failed + m.stats.Crashed + m.stats.Leaked + m.stats.Timeout
+
+	var greenLen, redLen, emptyLen int
+	var passPercent float64
+
 	if total > 0 {
-		ratio = float64(len(m.results)) / float64(total)
-		if ratio > 1.0 {
-			ratio = 1.0
+		passPercent = (float64(m.stats.Passed) / float64(total)) * 100.0
+		if m.stats.Passed < total && passPercent > 99.0 {
+			passPercent = 99.0
 		}
+		if m.stats.Passed > 0 && passPercent < 1.0 {
+			passPercent = 1.0
+		}
+
+		if m.stats.Passed == total {
+			// 100% Passed -> Pure Green across the entire bar
+			greenLen = width
+			redLen = 0
+			emptyLen = 0
+		} else if failedCount == total {
+			// 0% Passed (100% Failed) -> Pure Red across the entire bar
+			greenLen = 0
+			redLen = width
+			emptyLen = 0
+		} else if !m.running || len(m.results) >= total {
+			// Finished suite: Green on the left, Red on the right, fully covering width
+			greenLen = int(float64(m.stats.Passed)/float64(total)*float64(width) + 0.5)
+			if m.stats.Passed > 0 && greenLen == 0 {
+				greenLen = 1
+			}
+			if failedCount > 0 && greenLen >= width {
+				greenLen = width - 1
+			}
+			redLen = width - greenLen
+			emptyLen = 0
+		} else {
+			// Still running: Green on the left, Red next, and pending tests in gray background
+			greenLen = int(float64(m.stats.Passed) / float64(total) * float64(width))
+			redLen = int(float64(failedCount) / float64(total) * float64(width))
+			if m.stats.Passed > 0 && greenLen == 0 {
+				greenLen = 1
+			}
+			if failedCount > 0 && redLen == 0 {
+				redLen = 1
+			}
+			if greenLen+redLen > width {
+				redLen = width - greenLen
+			}
+			emptyLen = width - greenLen - redLen
+			if emptyLen < 0 {
+				emptyLen = 0
+			}
+		}
+	} else {
+		emptyLen = width
 	}
 
-	// JetBrains color behavior: Green as long as all tests pass, immediately turns Red on any failure
-	isFailed := m.stats.Failed > 0 || m.stats.Crashed > 0 || m.stats.Leaked > 0
-	barColor := JBGreen
-	if isFailed {
-		barColor = JBRed
+	var greenPart, redPart, emptyPart string
+	if greenLen > 0 {
+		greenPart = lipgloss.NewStyle().Background(JBGreen).Render(strings.Repeat(" ", greenLen))
+	}
+	if redLen > 0 {
+		redPart = lipgloss.NewStyle().Background(JBRed).Render(strings.Repeat(" ", redLen))
+	}
+	if emptyLen > 0 {
+		emptyPart = lipgloss.NewStyle().Background(lipgloss.Color("#393B40")).Render(strings.Repeat(" ", emptyLen))
 	}
 
-	// Line 1: Full-width progress bar spanning 100% of terminal width
-	filledLen := int(ratio * float64(width))
-	if filledLen > width {
-		filledLen = width
-	}
-	emptyLen := width - filledLen
-
-	filledPart := lipgloss.NewStyle().Background(barColor).Render(strings.Repeat(" ", filledLen))
-	emptyPart := lipgloss.NewStyle().Background(lipgloss.Color("#393B40")).Render(strings.Repeat(" ", emptyLen))
-	barLine := filledPart + emptyPart
+	barLine := greenPart + redPart + emptyPart
 
 	// Line 2: Info row directly below the progress bar
 	availW := width - 2 // FooterBarStyle has Padding(0, 1)
 
 	statsText := fmt.Sprintf("%3.0f%% (%d/%d) • %v",
-		ratio*100,
-		len(m.results),
+		passPercent,
+		m.stats.Passed,
 		total,
 		m.elapsedTime.Round(100*1000),
 	)

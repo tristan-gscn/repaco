@@ -53,9 +53,12 @@ func (m Model) buildTreeRows() []TreeRow {
 			}
 		}
 
-		isExpanded := true
-		if m.collapsedGroups != nil && m.collapsedGroups[fn] {
-			isExpanded = false
+		defaultExpanded := (groupStatus != model.StatusPassed)
+		isExpanded := defaultExpanded
+		if m.expandedGroups != nil {
+			if exp, ok := m.expandedGroups[fn]; ok {
+				isExpanded = exp
+			}
 		}
 
 		// Parent File group

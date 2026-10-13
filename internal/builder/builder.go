@@ -71,7 +71,10 @@ func (b *Builder) CheckMakefile(ctx context.Context, dir string, targetName stri
 
 	// Relink check: run make, then run make again and check output
 	cmd1 := exec.CommandContext(ctx, "make", "-C", dir)
-	_ = cmd1.Run()
+	if err := cmd1.Run(); err != nil {
+		// Compilation itself failed; let ExecuteMake report the compiler error
+		return res, nil
+	}
 
 	var stdout2 bytes.Buffer
 	cmd2 := exec.CommandContext(ctx, "make", "-C", dir)

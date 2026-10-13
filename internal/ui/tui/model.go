@@ -48,9 +48,9 @@ type Model struct {
 	targetDir       string
 
 	// Detail pane focus and scrolling
-	focusRight      bool
-	detailScroll    int
-	collapsedGroups map[string]bool
+	focusRight     bool
+	detailScroll   int
+	expandedGroups map[string]bool
 }
 
 func NewModel(ctx context.Context, eng *engine.Engine) Model {
@@ -83,7 +83,7 @@ func NewModel(ctx context.Context, eng *engine.Engine) Model {
 		startTime:       time.Now(),
 		knownProjects:   known,
 		targetDir:       cwd,
-		collapsedGroups: make(map[string]bool),
+		expandedGroups:  make(map[string]bool),
 	}
 }
 
@@ -190,10 +190,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor >= 0 && m.cursor < len(treeRows) {
 					row := treeRows[m.cursor]
 					if row.IsGroup && !row.Expanded {
-						if m.collapsedGroups == nil {
-							m.collapsedGroups = make(map[string]bool)
+						if m.expandedGroups == nil {
+							m.expandedGroups = make(map[string]bool)
 						}
-						m.collapsedGroups[row.File] = false
+						m.expandedGroups[row.File] = true
 						return m, nil
 					}
 				}
@@ -211,10 +211,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor >= 0 && m.cursor < len(treeRows) {
 					row := treeRows[m.cursor]
 					if row.IsGroup && row.Expanded {
-						if m.collapsedGroups == nil {
-							m.collapsedGroups = make(map[string]bool)
+						if m.expandedGroups == nil {
+							m.expandedGroups = make(map[string]bool)
 						}
-						m.collapsedGroups[row.File] = true
+						m.expandedGroups[row.File] = false
 						return m, nil
 					} else if !row.IsGroup {
 						for i := m.cursor - 1; i >= 0; i-- {
@@ -247,6 +247,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.stats = model.SummaryStats{}
 				m.startTime = time.Now()
 				m.statusMsg = "Testing " + selected.Detection.Project.Name + "..."
+				m.expandedGroups = make(map[string]bool)
 
 				newCh := make(chan model.EngineEvent, 100)
 				m.eventsChan = newCh
@@ -262,10 +263,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor >= 0 && m.cursor < len(treeRows) {
 					row := treeRows[m.cursor]
 					if row.IsGroup {
-						if m.collapsedGroups == nil {
-							m.collapsedGroups = make(map[string]bool)
+						if m.expandedGroups == nil {
+							m.expandedGroups = make(map[string]bool)
 						}
-						m.collapsedGroups[row.File] = !m.collapsedGroups[row.File]
+						m.expandedGroups[row.File] = !row.Expanded
 						newRows := m.buildTreeRows()
 						if m.cursor >= len(newRows) {
 							m.cursor = len(newRows) - 1
