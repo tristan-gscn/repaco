@@ -179,7 +179,7 @@ func (m Model) renderDiscoveryView(width, height int) string {
 
 	// 2. Bottom status bar (1 line)
 	bottomBar := FooterBarStyle.Width(width).Render(
-		MutedTextStyle.Render("Select a project with UP/DOWN to inspect required files."),
+		MutedTextStyle.Render("Select a project with UP/DOWN to inspect required files • Press [q / ESC] to quit"),
 	)
 
 	headerH := lipgloss.Height(topHeader)

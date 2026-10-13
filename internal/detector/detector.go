@@ -194,10 +194,13 @@ func (d *Detector) DetectAround(rootDir string) ([]model.DiscoveredProject, erro
 	seen := make(map[string]bool)
 	seen[absDir] = true
 
+	parent := filepath.Dir(absDir)
+	isRootOrHome := parent == absDir || absDir == "/" || absDir == "/Users" || absDir == "/home"
+
 	// 1. Immediate subdirectories of rootDir
 	if entries, err := os.ReadDir(absDir); err == nil {
 		for _, e := range entries {
-			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !isIgnoredDir(e.Name()) {
 				p := filepath.Join(absDir, e.Name())
 				if !seen[p] {
 					seen[p] = true
@@ -208,14 +211,15 @@ func (d *Detector) DetectAround(rootDir string) ([]model.DiscoveredProject, erro
 	}
 
 	// 2. Sibling directories in parent folder
-	parent := filepath.Dir(absDir)
-	if entries, err := os.ReadDir(parent); err == nil {
-		for _, e := range entries {
-			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
-				p := filepath.Join(parent, e.Name())
-				if !seen[p] {
-					seen[p] = true
-					candidates = append(candidates, p)
+	if !isRootOrHome {
+		if entries, err := os.ReadDir(parent); err == nil {
+			for _, e := range entries {
+				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !isIgnoredDir(e.Name()) {
+					p := filepath.Join(parent, e.Name())
+					if !seen[p] {
+						seen[p] = true
+						candidates = append(candidates, p)
+					}
 				}
 			}
 		}
@@ -223,6 +227,9 @@ func (d *Detector) DetectAround(rootDir string) ([]model.DiscoveredProject, erro
 
 	var discovered []model.DiscoveredProject
 	for _, c := range candidates {
+		if !mightBeCProject(c) {
+			continue
+		}
 		res, err := d.Detect(c)
 		if err == nil && res.Project.ID != model.ProjectUnknown {
 			rel, err := filepath.Rel(absDir, c)
@@ -240,6 +247,33 @@ func (d *Detector) DetectAround(rootDir string) ([]model.DiscoveredProject, erro
 	}
 
 	return discovered, nil
+}
+
+func isIgnoredDir(name string) bool {
+	switch strings.ToLower(name) {
+	case "library", "applications", "system", "node_modules", ".git", ".github",
+		"desktop", "documents", "downloads", "movies", "music", "pictures",
+		"deriveddata", "build", ".build", ".objects", "public", ".cache":
+		return true
+	default:
+		return false
+	}
+}
+
+func mightBeCProject(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if name == "Makefile" || name == "makefile" ||
+			strings.HasSuffix(name, ".c") || strings.HasSuffix(name, ".h") ||
+			name == "includes" || name == "src" || name == "srcs" || name == "inc" {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Detector) populateFiles(rootDir string, meta model.ProjectMetadata, fileMap map[string]bool, res *model.DetectionResult) {
@@ -267,15 +301,17 @@ func hasSubfile(rootDir, subDir, fileName string) bool {
 }
 
 func fileExistsInTree(rootDir, fileName string) bool {
-	var found bool
-	_ = filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || found {
-			return nil
+	subdirs := []string{"", "includes", "inc", "src", "srcs"}
+	for _, sub := range subdirs {
+		var p string
+		if sub == "" {
+			p = filepath.Join(rootDir, fileName)
+		} else {
+			p = filepath.Join(rootDir, sub, fileName)
 		}
-		if !info.IsDir() && info.Name() == fileName {
-			found = true
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return true
 		}
-		return nil
-	})
-	return found
+	}
+	return false
 }

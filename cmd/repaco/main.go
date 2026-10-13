@@ -86,6 +86,10 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Engine execution error: %v\n", err)
 			os.Exit(1)
 		}
+		if res == nil {
+			fmt.Fprintf(os.Stderr, "No 42 project directly detected in %s. Launch repaco interactively to browse projects.\n", cfg.TargetDir)
+			os.Exit(1)
+		}
 
 		if useJSON {
 			if err := agent.PrintJSON(os.Stdout, res); err != nil {

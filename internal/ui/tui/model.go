@@ -51,9 +51,36 @@ type Model struct {
 	focusRight     bool
 	detailScroll   int
 	expandedGroups map[string]bool
+
+	cancel         context.CancelFunc
+	targetDirFiles map[string]bool
+}
+
+func scanTargetDirFiles(dir string) map[string]bool {
+	files := make(map[string]bool)
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				files[e.Name()] = true
+			}
+		}
+	}
+	subdirs := []string{"includes", "inc", "src", "srcs"}
+	for _, sub := range subdirs {
+		subPath := filepath.Join(dir, sub)
+		if entries, err := os.ReadDir(subPath); err == nil {
+			for _, e := range entries {
+				if !e.IsDir() {
+					files[e.Name()] = true
+				}
+			}
+		}
+	}
+	return files
 }
 
 func NewModel(ctx context.Context, eng *engine.Engine) Model {
+	ctx, cancel := context.WithCancel(ctx)
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(JBAccent)
@@ -75,6 +102,7 @@ func NewModel(ctx context.Context, eng *engine.Engine) Model {
 
 	return Model{
 		ctx:             ctx,
+		cancel:          cancel,
 		eng:             eng,
 		eventsChan:      ch,
 		running:         true,
@@ -83,6 +111,7 @@ func NewModel(ctx context.Context, eng *engine.Engine) Model {
 		startTime:       time.Now(),
 		knownProjects:   known,
 		targetDir:       cwd,
+		targetDirFiles:  scanTargetDirFiles(cwd),
 		expandedGroups:  make(map[string]bool),
 	}
 }
@@ -125,6 +154,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detection = ev.Detection
 			if ev.Detection != nil && ev.Detection.RootDir != "" {
 				m.targetDir = ev.Detection.RootDir
+				m.targetDirFiles = scanTargetDirFiles(m.targetDir)
 			}
 			m.statusMsg = ev.Message
 
@@ -175,12 +205,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
+			if m.cancel != nil {
+				m.cancel()
+			}
 			return m, tea.Quit
 
 		case "esc":
 			if m.focusRight {
 				m.focusRight = false
 				return m, nil
+			}
+			if m.cancel != nil {
+				m.cancel()
 			}
 			return m, tea.Quit
 
@@ -244,6 +280,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursor = 0
 				m.detailScroll = 0
 				m.focusRight = false
+				m.targetDir = selected.AbsPath
+				m.targetDirFiles = scanTargetDirFiles(selected.AbsPath)
 				m.stats = model.SummaryStats{}
 				m.startTime = time.Now()
 				m.statusMsg = "Testing " + selected.Detection.Project.Name + "..."
@@ -404,21 +442,12 @@ func (m *Model) updateStats() {
 	m.stats = s
 }
 
-// checkFileExists checks if a file exists relative to targetDir or anywhere in tree
+// checkFileExists checks if a file exists relative to targetDir or standard subdirectories
 func (m Model) checkFileExists(filename string) bool {
-	p := filepath.Join(m.targetDir, filename)
-	if _, err := os.Stat(p); err == nil {
-		return true
+	if m.targetDirFiles != nil {
+		return m.targetDirFiles[filename]
 	}
-	var found bool
-	_ = filepath.Walk(m.targetDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil || found {
-			return nil
-		}
-		if !info.IsDir() && info.Name() == filename {
-			found = true
-		}
-		return nil
-	})
-	return found
+	p := filepath.Join(m.targetDir, filename)
+	_, err := os.Stat(p)
+	return err == nil
 }

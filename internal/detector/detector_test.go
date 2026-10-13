@@ -114,3 +114,25 @@ func TestDetectorOnActualProjects(t *testing.T) {
 		})
 	}
 }
+
+func TestDetectorNonProject(t *testing.T) {
+	d := New()
+	emptyDir := t.TempDir()
+
+	res, err := d.Detect(emptyDir)
+	if err != nil {
+		t.Fatalf("Detect error: %v", err)
+	}
+	if res.Project.ID != model.ProjectUnknown {
+		t.Errorf("Expected ProjectUnknown, got %s", res.Project.ID)
+	}
+
+	around, err := d.DetectAround(emptyDir)
+	if err != nil {
+		t.Fatalf("DetectAround error: %v", err)
+	}
+	if len(around) != 0 {
+		t.Errorf("Expected 0 projects around empty dir, got %d", len(around))
+	}
+}
+
