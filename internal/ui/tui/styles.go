@@ -3,96 +3,104 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	// Palette
-	PrimaryColor   = lipgloss.Color("#7C3AED") // Purple
-	SecondaryColor = lipgloss.Color("#6366F1") // Indigo
-	SuccessColor   = lipgloss.Color("#10B981") // Green
-	ErrorColor     = lipgloss.Color("#EF4444") // Red
-	CrashColor     = lipgloss.Color("#DC2626") // Dark Red
-	WarningColor   = lipgloss.Color("#F59E0B") // Amber
-	InfoColor      = lipgloss.Color("#3B82F6") // Blue
-	MutedColor     = lipgloss.Color("#6B7280") // Gray
-	DarkBgColor    = lipgloss.Color("#1F2937") // Dark Slate
-	BorderColor    = lipgloss.Color("#374151") // Border Gray
+	// JetBrains Dark Theme Palette
+	JBBackground  = lipgloss.Color("#1E1F22")
+	JBHeaderBg    = lipgloss.Color("#2B2D30")
+	JBBorder      = lipgloss.Color("#393B40")
+	JBSelection   = lipgloss.Color("#2E436E")
+	JBTextPrimary = lipgloss.Color("#DFE1E5")
+	JBTextMuted   = lipgloss.Color("#868A91")
+	JBAccent      = lipgloss.Color("#3574F0") // JetBrains Blue
+	JBGreen       = lipgloss.Color("#59A869") // JetBrains Green
+	JBRed         = lipgloss.Color("#DB5860") // JetBrains Red
+	JBAmber       = lipgloss.Color("#E5A038") // JetBrains Warning
+	JBPurple      = lipgloss.Color("#A970FF")
+	JBCyan        = lipgloss.Color("#499C54")
 
 	// Header Styles
-	HeaderTitleStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FFFFFF")).
-				Background(PrimaryColor).
-				Bold(true).
-				Padding(0, 1)
-
-	HeaderSubStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#D1D5DB")).
-			Bold(false).
-			Padding(0, 1)
-
-	BadgePass = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(SuccessColor).
+	HeaderStyle = lipgloss.NewStyle().
+			Background(JBHeaderBg).
+			Foreground(JBTextPrimary).
 			Bold(true).
 			Padding(0, 1)
+
+	ProjectTagStyle = lipgloss.NewStyle().
+			Background(JBAccent).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Bold(true).
+			Padding(0, 1)
+
+	// Status Badges
+	BadgePass = lipgloss.NewStyle().
+			Foreground(JBGreen).
+			Bold(true)
 
 	BadgeFail = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(ErrorColor).
-			Bold(true).
-			Padding(0, 1)
+			Foreground(JBRed).
+			Bold(true)
 
 	BadgeCrash = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFFFF")).
-			Background(CrashColor).
-			Bold(true).
-			Padding(0, 1)
+			Foreground(lipgloss.Color("#FF4D4D")).
+			Bold(true)
 
-	// List Pane Styles
+	BadgeWarning = lipgloss.NewStyle().
+			Foreground(JBAmber).
+			Bold(true)
+
+	BadgeLeak = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#4AA8FF")).
+			Bold(true)
+
+	// Panel Styles (zero padding so selection stretches edge-to-edge)
+	PanelStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(JBBorder)
+
+	ActivePanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(JBAccent)
+
+	// List Items (border to border highlight)
 	SelectedRowStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#374151")).
+				Background(JBSelection).
 				Foreground(lipgloss.Color("#FFFFFF")).
 				Bold(true)
 
 	NormalRowStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#E5E7EB"))
+			Foreground(JBTextPrimary)
 
 	MutedTextStyle = lipgloss.NewStyle().
-			Foreground(MutedColor)
+			Foreground(JBTextMuted)
 
-	// Panel Borders
-	PanelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(BorderColor).
-			Padding(0, 1)
-
-	ActivePanelStyle = lipgloss.NewStyle().
-				Border(lipgloss.RoundedBorder()).
-				BorderForeground(SecondaryColor).
-				Padding(0, 1)
-
-	// Detail Pane Styles
-	DetailHeaderStyle = lipgloss.NewStyle().
-				Foreground(SecondaryColor).
-				Bold(true).
-				MarginBottom(1)
+	// Detail Sections
+	DetailTitleStyle = lipgloss.NewStyle().
+				Foreground(JBTextPrimary).
+				Bold(true)
 
 	SectionLabelStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#9CA3AF")).
+				Foreground(JBAccent).
 				Bold(true)
 
 	DiffExpectedStyle = lipgloss.NewStyle().
-				Foreground(SuccessColor)
+				Foreground(JBGreen)
 
 	DiffActualStyle = lipgloss.NewStyle().
-			Foreground(ErrorColor)
+			Foreground(JBRed)
 
 	AdviceStyle = lipgloss.NewStyle().
-			Foreground(SuccessColor).
+			Foreground(JBGreen).
 			Bold(true)
 
 	// Footer Styles
+	FooterBarStyle = lipgloss.NewStyle().
+			Background(JBHeaderBg).
+			Foreground(JBTextPrimary).
+			Padding(0, 1)
+
 	FooterKeyStyle = lipgloss.NewStyle().
-			Foreground(PrimaryColor).
+			Foreground(JBAccent).
 			Bold(true)
 
 	FooterDescStyle = lipgloss.NewStyle().
-			Foreground(MutedColor)
+			Foreground(JBTextMuted)
 )

@@ -12,9 +12,6 @@ type Config struct {
 	// ProjectOverride forces a specific project tester instead of auto-detecting.
 	ProjectOverride string
 
-	// NoTUI disables the interactive Bubbletea interface and uses plain CLI logs.
-	NoTUI bool
-
 	// FailFast stops test execution at the first failure.
 	FailFast bool
 
@@ -45,7 +42,6 @@ func NewDefaultConfig() *Config {
 	return &Config{
 		TargetDir:        ".",
 		ProjectOverride:  "",
-		NoTUI:            false,
 		FailFast:         false,
 		FilterModule:     "",
 		FilterCategory:   "",

@@ -1,38 +1,71 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/tristan-gscn/repaco/internal/detector"
 	"github.com/tristan-gscn/repaco/internal/model"
 )
 
 type EventMsg model.EngineEvent
 
 type Model struct {
-	detection        *model.DetectionResult
-	results          []model.TestResult
-	cursor           int
-	activePane       int // 0 = list, 1 = details
-	detailScroll     int
-	filterOnlyFailed bool
-	running          bool
-	done             bool
-	statusMsg        string
-	width            int
-	height           int
-	eventsChan       <-chan model.EngineEvent
-	stats            model.SummaryStats
+	detection    *model.DetectionResult
+	results      []model.TestResult
+	cursor       int
+	running      bool
+	done         bool
+	statusMsg    string
+	fatalErr     string
+	width        int
+	height       int
+	eventsChan   <-chan model.EngineEvent
+	stats        model.SummaryStats
+	spinner      spinner.Model
+	totalTests   int
+	currentTest  int
+	startTime    time.Time
+	elapsedTime  time.Duration
+
+	// Discovery mode when no project is detected
+	isDiscovery     bool
+	knownProjects   []model.ProjectMetadata
+	discoveryCursor int
+	targetDir       string
 }
 
 func NewModel(eventsChan <-chan model.EngineEvent) Model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(JBAccent)
+
+	known := []model.ProjectMetadata{
+		detector.KnownProjects[model.ProjectLibft],
+		detector.KnownProjects[model.ProjectFtPrintf],
+		detector.KnownProjects[model.ProjectGetNextLine],
+		detector.KnownProjects[model.ProjectPushSwap],
+	}
+
+	cwd, _ := os.Getwd()
+
 	return Model{
-		eventsChan: eventsChan,
-		running:    true,
-		statusMsg:  "Initializing repaco...",
+		eventsChan:    eventsChan,
+		running:       true,
+		statusMsg:     "Scanning directory for 42 project...",
+		spinner:       s,
+		startTime:     time.Now(),
+		knownProjects: known,
+		targetDir:     cwd,
 	}
 }
 
 func (m Model) Init() tea.Cmd {
-	return waitForEvent(m.eventsChan)
+	return tea.Batch(m.spinner.Tick, waitForEvent(m.eventsChan))
 }
 
 func waitForEvent(ch <-chan model.EngineEvent) tea.Cmd {
@@ -46,17 +79,30 @@ func waitForEvent(ch <-chan model.EngineEvent) tea.Cmd {
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmds []tea.Cmd
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
 		return m, nil
 
+	case spinner.TickMsg:
+		if m.running {
+			m.elapsedTime = time.Since(m.startTime)
+			var cmd tea.Cmd
+			m.spinner, cmd = m.spinner.Update(msg)
+			cmds = append(cmds, cmd)
+		}
+
 	case EventMsg:
 		ev := model.EngineEvent(msg)
 		switch ev.Type {
 		case model.EventDetectDone:
 			m.detection = ev.Detection
+			if ev.Detection != nil && ev.Detection.RootDir != "" {
+				m.targetDir = ev.Detection.RootDir
+			}
 			m.statusMsg = ev.Message
 		case model.EventBuildStarted:
 			m.statusMsg = ev.Message
@@ -67,6 +113,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case model.EventTestStarted:
 			m.statusMsg = ev.Message
+			m.currentTest = ev.Current
+			m.totalTests = ev.Total
 		case model.EventTestCompleted:
 			if ev.TestResult != nil {
 				m.results = append(m.results, *ev.TestResult)
@@ -75,62 +123,49 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case model.EventSuiteDone:
 			m.running = false
 			m.done = true
-			m.statusMsg = "Test suite finished. Use keys to inspect details."
+			m.elapsedTime = time.Since(m.startTime)
+			m.statusMsg = "Testing completed."
 			return m, nil
 		case model.EventFatalError:
 			m.running = false
 			m.done = true
-			m.statusMsg = "Error: " + ev.Error.Error()
+			m.isDiscovery = true
+			m.fatalErr = ev.Error.Error()
 			return m, nil
 		}
-		return m, waitForEvent(m.eventsChan)
+		cmds = append(cmds, waitForEvent(m.eventsChan))
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "esc", "ctrl+c", "q":
 			return m, tea.Quit
-		case "up", "k":
-			if m.activePane == 0 {
-				if m.cursor > 0 {
-					m.cursor--
-					m.detailScroll = 0
+
+		case "up":
+			if m.isDiscovery {
+				if m.discoveryCursor > 0 {
+					m.discoveryCursor--
 				}
-			} else {
-				if m.detailScroll > 0 {
-					m.detailScroll--
+				return m, nil
+			}
+			if m.cursor > 0 {
+				m.cursor--
+			}
+
+		case "down":
+			if m.isDiscovery {
+				if m.discoveryCursor < len(m.knownProjects)-1 {
+					m.discoveryCursor++
 				}
+				return m, nil
 			}
-		case "down", "j":
-			visible := m.getVisibleResults()
-			if m.activePane == 0 {
-				if m.cursor < len(visible)-1 {
-					m.cursor++
-					m.detailScroll = 0
-				}
-			} else {
-				m.detailScroll++
-			}
-		case "tab":
-			m.activePane = 1 - m.activePane
-		case "f":
-			m.filterOnlyFailed = !m.filterOnlyFailed
-			m.cursor = 0
-			m.detailScroll = 0
-		case "home", "g":
-			if m.activePane == 0 {
-				m.cursor = 0
-			} else {
-				m.detailScroll = 0
-			}
-		case "end", "G":
-			visible := m.getVisibleResults()
-			if m.activePane == 0 && len(visible) > 0 {
-				m.cursor = len(visible) - 1
+			visible := m.results
+			if m.cursor < len(visible)-1 {
+				m.cursor++
 			}
 		}
 	}
 
-	return m, nil
+	return m, tea.Batch(cmds...)
 }
 
 func (m *Model) updateStats() {
@@ -155,15 +190,21 @@ func (m *Model) updateStats() {
 	m.stats = s
 }
 
-func (m Model) getVisibleResults() []model.TestResult {
-	if !m.filterOnlyFailed {
-		return m.results
+// checkFileExists checks if a file exists relative to targetDir or anywhere in tree
+func (m Model) checkFileExists(filename string) bool {
+	p := filepath.Join(m.targetDir, filename)
+	if _, err := os.Stat(p); err == nil {
+		return true
 	}
-	var filtered []model.TestResult
-	for _, r := range m.results {
-		if r.Status != model.StatusPassed && r.Status != model.StatusSkipped {
-			filtered = append(filtered, r)
+	var found bool
+	_ = filepath.Walk(m.targetDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || found {
+			return nil
 		}
-	}
-	return filtered
+		if !info.IsDir() && info.Name() == filename {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
