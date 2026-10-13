@@ -1,0 +1,1025 @@
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+#include <limits.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <stddef.h>
+#include "libft.h"
+
+typedef struct s_test_entry {
+	const char *id;
+	const char *module;
+	const char *name;
+	const char *category;
+	const char *desc;
+	int (*fn)(char *exp, char *act, char *expl, char *adv);
+} t_test_entry;
+
+/* Helper functions for strmapi / striteri */
+static char map_rot1(unsigned int i, char c) {
+	(void)i;
+	return (char)(c + 1);
+}
+static char map_index(unsigned int i, char c) {
+	return (char)(c + i);
+}
+static void iter_rot1(unsigned int i, char *c) {
+	(void)i;
+	*c = (char)(*c + 1);
+}
+
+/* Helper del function for lists */
+static int g_del_count = 0;
+static void del_counter(void *content) {
+	(void)content;
+	g_del_count++;
+}
+static void *map_dup(void *content) {
+	return strdup((char *)content);
+}
+
+/* ========================================================================= */
+/* TEST IMPLEMENTATIONS                                                      */
+/* ========================================================================= */
+
+/* --- isalpha --- */
+static int test_isalpha_alpha(char *exp, char *act, char *expl, char *adv) {
+	for (int c = 'a'; c <= 'z'; c++) {
+		if (ft_isalpha(c) == 0) {
+			snprintf(exp, 128, "Non-zero for '%c'", c);
+			snprintf(act, 128, "0");
+			snprintf(expl, 256, "ft_isalpha returned 0 for lowercase '%c'", c);
+			snprintf(adv, 256, "Ensure lowercase characters 'a'-'z' return non-zero.");
+			return 0;
+		}
+	}
+	for (int c = 'A'; c <= 'Z'; c++) {
+		if (ft_isalpha(c) == 0) {
+			snprintf(exp, 128, "Non-zero for '%c'", c);
+			snprintf(act, 128, "0");
+			snprintf(expl, 256, "ft_isalpha returned 0 for uppercase '%c'", c);
+			snprintf(adv, 256, "Ensure uppercase characters 'A'-'Z' return non-zero.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int test_isalpha_nonalpha(char *exp, char *act, char *expl, char *adv) {
+	int non_alphas[] = {'0', '9', '@', '[', '`', '{', ' ', '\t', '\0', 127, 200};
+	for (size_t i = 0; i < sizeof(non_alphas)/sizeof(non_alphas[0]); i++) {
+		int c = non_alphas[i];
+		if (ft_isalpha(c) != 0) {
+			snprintf(exp, 128, "0 for ascii %d", c);
+			snprintf(act, 128, "%d", ft_isalpha(c));
+			snprintf(expl, 256, "ft_isalpha returned non-zero for non-alpha char (ascii %d)", c);
+			snprintf(adv, 256, "Only letters [a-zA-Z] must return non-zero.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* --- isdigit --- */
+static int test_isdigit_digits(char *exp, char *act, char *expl, char *adv) {
+	for (int c = '0'; c <= '9'; c++) {
+		if (ft_isdigit(c) == 0) {
+			snprintf(exp, 128, "Non-zero for '%c'", c);
+			snprintf(act, 128, "0");
+			snprintf(expl, 256, "ft_isdigit returned 0 for digit '%c'", c);
+			snprintf(adv, 256, "Digits '0'-'9' must return non-zero.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int test_isdigit_nondigits(char *exp, char *act, char *expl, char *adv) {
+	int nondigits[] = {'/', ':', 'a', 'Z', ' ', -1, 128};
+	for (size_t i = 0; i < sizeof(nondigits)/sizeof(nondigits[0]); i++) {
+		int c = nondigits[i];
+		if (ft_isdigit(c) != 0) {
+			snprintf(exp, 128, "0 for ascii %d", c);
+			snprintf(act, 128, "%d", ft_isdigit(c));
+			snprintf(expl, 256, "ft_isdigit returned non-zero for non-digit character");
+			snprintf(adv, 256, "Check boundary conditions: c >= '0' && c <= '9'.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* --- isalnum --- */
+static int test_isalnum_valid(char *exp, char *act, char *expl, char *adv) {
+	char valid[] = "aZ90m";
+	for (size_t i = 0; i < strlen(valid); i++) {
+		if (ft_isalnum(valid[i]) == 0) {
+			snprintf(exp, 128, "Non-zero for '%c'", valid[i]);
+			snprintf(act, 128, "0");
+			snprintf(expl, 256, "ft_isalnum returned 0 for alphanumeric character");
+			snprintf(adv, 256, "Combine ft_isalpha(c) || ft_isdigit(c).");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int test_isalnum_invalid(char *exp, char *act, char *expl, char *adv) {
+	char invalid[] = "!@ #$%^&*()_+=-`~";
+	for (size_t i = 0; i < strlen(invalid); i++) {
+		if (ft_isalnum(invalid[i]) != 0) {
+			snprintf(exp, 128, "0 for '%c'", invalid[i]);
+			snprintf(act, 128, "Non-zero");
+			snprintf(expl, 256, "ft_isalnum returned non-zero for punctuation or whitespace");
+			snprintf(adv, 256, "Only letters and numbers are alphanumeric.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* --- isascii --- */
+static int test_isascii(char *exp, char *act, char *expl, char *adv) {
+	for (int c = 0; c <= 127; c++) {
+		if (ft_isascii(c) == 0) {
+			snprintf(exp, 128, "Non-zero for %d", c);
+			snprintf(act, 128, "0");
+			snprintf(expl, 256, "ft_isascii failed for valid ASCII code %d", c);
+			snprintf(adv, 256, "Valid ASCII range is 0 <= c && c <= 127.");
+			return 0;
+		}
+	}
+	int invalid[] = {-1, 128, 255, 1000};
+	for (size_t i = 0; i < sizeof(invalid)/sizeof(invalid[0]); i++) {
+		if (ft_isascii(invalid[i]) != 0) {
+			snprintf(exp, 128, "0 for %d", invalid[i]);
+			snprintf(act, 128, "Non-zero");
+			snprintf(expl, 256, "ft_isascii returned non-zero for out of range value %d", invalid[i]);
+			snprintf(adv, 256, "Values outside [0, 127] must return 0.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* --- isprint --- */
+static int test_isprint(char *exp, char *act, char *expl, char *adv) {
+	for (int c = 32; c <= 126; c++) {
+		if (ft_isprint(c) == 0) {
+			snprintf(exp, 128, "Non-zero for %d", c);
+			snprintf(act, 128, "0");
+			snprintf(expl, 256, "ft_isprint returned 0 for printable char %d ('%c')", c, c);
+			snprintf(adv, 256, "Printable ASCII range is 32 <= c && c <= 126.");
+			return 0;
+		}
+	}
+	int nonprint[] = {0, 10, 13, 31, 127, 200};
+	for (size_t i = 0; i < sizeof(nonprint)/sizeof(nonprint[0]); i++) {
+		if (ft_isprint(nonprint[i]) != 0) {
+			snprintf(exp, 128, "0 for non-printable %d", nonprint[i]);
+			snprintf(act, 128, "Non-zero");
+			snprintf(expl, 256, "ft_isprint returned non-zero for non-printable code %d", nonprint[i]);
+			snprintf(adv, 256, "Characters below 32 or equal to 127 are not printable.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* --- strlen --- */
+static int test_strlen(char *exp, char *act, char *expl, char *adv) {
+	if (ft_strlen("") != 0) {
+		snprintf(exp, 128, "0");
+		snprintf(act, 128, "%zu", ft_strlen(""));
+		snprintf(expl, 256, "ft_strlen(\"\") did not return 0");
+		snprintf(adv, 256, "Empty string has length 0.");
+		return 0;
+	}
+	const char *s = "42 Born To Code";
+	if (ft_strlen(s) != strlen(s)) {
+		snprintf(exp, 128, "%zu", strlen(s));
+		snprintf(act, 128, "%zu", ft_strlen(s));
+		snprintf(expl, 256, "ft_strlen mismatch on '%s'", s);
+		snprintf(adv, 256, "Iterate until character is '\\0'.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- memset --- */
+static int test_memset(char *exp, char *act, char *expl, char *adv) {
+	char buf1[32];
+	char buf2[32];
+	memset(buf1, 'B', sizeof(buf1));
+	memset(buf2, 'B', sizeof(buf2));
+
+	void *ret = ft_memset(buf1, 'X', 10);
+	if (ret != buf1) {
+		snprintf(exp, 128, "Pointer to buf1 (%p)", (void*)buf1);
+		snprintf(act, 128, "%p", ret);
+		snprintf(expl, 256, "ft_memset must return the pointer passed as first argument");
+		snprintf(adv, 256, "Return dest pointer.");
+		return 0;
+	}
+	memset(buf2, 'X', 10);
+	if (memcmp(buf1, buf2, sizeof(buf1)) != 0) {
+		snprintf(exp, 128, "Buffer filled with 10 'X' then 'B'");
+		snprintf(act, 128, "Corrupted buffer");
+		snprintf(expl, 256, "ft_memset memory contents do not match standard memset");
+		snprintf(adv, 256, "Cast c to (unsigned char) and loop for n bytes.");
+		return 0;
+	}
+	/* Cast check with int > 255 */
+	ft_memset(buf1, 0x142, 5);
+	memset(buf2, 0x142, 5);
+	if (memcmp(buf1, buf2, 5) != 0) {
+		snprintf(exp, 128, "0x42 byte values");
+		snprintf(act, 128, "Mismatch");
+		snprintf(expl, 256, "ft_memset failed when c > 255");
+		snprintf(adv, 256, "c must be converted to unsigned char: *(unsigned char*)p = (unsigned char)c;");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- bzero --- */
+static int test_bzero(char *exp, char *act, char *expl, char *adv) {
+	char buf[32] = "1234567890abcdef";
+	char expected[32] = "1234567890abcdef";
+	memset(expected + 4, 0, 8);
+	ft_bzero(buf + 4, 8);
+	if (memcmp(buf, expected, 16) != 0) {
+		snprintf(exp, 128, "8 zeroed bytes starting at offset 4");
+		snprintf(act, 128, "Memory mismatch");
+		snprintf(expl, 256, "ft_bzero did not zero the requested byte range");
+		snprintf(adv, 256, "ft_bzero can be implemented using ft_memset(s, 0, n).");
+		return 0;
+	}
+	char buf0[16] = "hello";
+	ft_bzero(buf0, 0);
+	if (strcmp(buf0, "hello") != 0) {
+		snprintf(exp, 128, "'hello' unchanged");
+		snprintf(act, 128, "Modified buffer");
+		snprintf(expl, 256, "ft_bzero modified memory when n == 0");
+		snprintf(adv, 256, "Ensure no writes happen when n is 0.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- memcpy --- */
+static int test_memcpy(char *exp, char *act, char *expl, char *adv) {
+	char src[] = "Copy this string completely!";
+	char dst1[64] = {0};
+	char dst2[64] = {0};
+
+	void *ret = ft_memcpy(dst1, src, strlen(src) + 1);
+	memcpy(dst2, src, strlen(src) + 1);
+	if (ret != dst1) {
+		snprintf(exp, 128, "%p", (void*)dst1);
+		snprintf(act, 128, "%p", ret);
+		snprintf(expl, 256, "ft_memcpy must return dest pointer");
+		snprintf(adv, 256, "Return dest pointer.");
+		return 0;
+	}
+	if (memcmp(dst1, dst2, sizeof(dst1)) != 0) {
+		snprintf(exp, 128, "%s", dst2);
+		snprintf(act, 128, "%s", dst1);
+		snprintf(expl, 256, "ft_memcpy memory copy mismatch");
+		snprintf(adv, 256, "Copy byte by byte cast to (unsigned char*).");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- memmove --- */
+static int test_memmove_overlap(char *exp, char *act, char *expl, char *adv) {
+	char str1[32] = "123456789";
+	char str2[32] = "123456789";
+
+	/* dest > src overlap */
+	ft_memmove(str1 + 2, str1, 5);
+	memmove(str2 + 2, str2, 5);
+	if (memcmp(str1, str2, 10) != 0) {
+		snprintf(exp, 128, "%s", str2);
+		snprintf(act, 128, "%s", str1);
+		snprintf(expl, 256, "ft_memmove failed on overlapping memory where dest > src");
+		snprintf(adv, 256, "When dest > src, copy backwards from end to avoid overwriting source bytes.");
+		return 0;
+	}
+
+	/* dest < src overlap */
+	char str3[32] = "abcdefghij";
+	char str4[32] = "abcdefghij";
+	ft_memmove(str3, str3 + 2, 5);
+	memmove(str4, str4 + 2, 5);
+	if (memcmp(str3, str4, 10) != 0) {
+		snprintf(exp, 128, "%s", str4);
+		snprintf(act, 128, "%s", str3);
+		snprintf(expl, 256, "ft_memmove failed on overlapping memory where dest < src");
+		snprintf(adv, 256, "When dest < src, copy forwards from beginning.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- strlcpy --- */
+static int test_strlcpy(char *exp, char *act, char *expl, char *adv) {
+	char dst[16];
+	const char *src = "HelloWorld";
+
+	/* 1. Large enough buffer */
+	size_t r = ft_strlcpy(dst, src, sizeof(dst));
+	if (r != 10 || strcmp(dst, "HelloWorld") != 0) {
+		snprintf(exp, 128, "return 10, dst 'HelloWorld'");
+		snprintf(act, 128, "return %zu, dst '%s'", r, dst);
+		snprintf(expl, 256, "ft_strlcpy failed basic copy");
+		snprintf(adv, 256, "ft_strlcpy must return strlen(src) and null-terminate.");
+		return 0;
+	}
+
+	/* 2. Truncation buffer size 5 -> copies 4 chars + '\\0' */
+	memset(dst, 'A', sizeof(dst));
+	r = ft_strlcpy(dst, src, 5);
+	if (r != 10 || memcmp(dst, "Hell\0", 5) != 0) {
+		snprintf(exp, 128, "return 10, dst 'Hell\\0'");
+		snprintf(act, 128, "return %zu, dst '%.5s'", r, dst);
+		snprintf(expl, 256, "ft_strlcpy failed truncation with size 5");
+		snprintf(adv, 256, "Must copy at most size - 1 characters and terminate with '\\0'.");
+		return 0;
+	}
+
+	/* 3. Size 0 -> must NOT write anything to dst, returns strlen(src) */
+	memset(dst, 'Z', sizeof(dst));
+	r = ft_strlcpy(dst, src, 0);
+	if (r != 10 || dst[0] != 'Z') {
+		snprintf(exp, 128, "return 10, dst untouched");
+		snprintf(act, 128, "return %zu, dst modified", r);
+		snprintf(expl, 256, "ft_strlcpy modified dst when size was 0");
+		snprintf(adv, 256, "If size == 0, do not write anything to dst.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- strlcat --- */
+static int test_strlcat(char *exp, char *act, char *expl, char *adv) {
+	char dst[32] = "Hello";
+	const char *src = " World";
+
+	/* 1. Normal cat */
+	size_t r = ft_strlcat(dst, src, sizeof(dst));
+	if (r != 11 || strcmp(dst, "Hello World") != 0) {
+		snprintf(exp, 128, "return 11, dst 'Hello World'");
+		snprintf(act, 128, "return %zu, dst '%s'", r, dst);
+		snprintf(expl, 256, "ft_strlcat failed normal concatenation");
+		snprintf(adv, 256, "Returns initial dst_len + src_len.");
+		return 0;
+	}
+
+	/* 2. Buffer size smaller than dst len */
+	char dst2[32] = "Bonjour";
+	r = ft_strlcat(dst2, " Monde", 4);
+	if (r != 4 + 6 || strcmp(dst2, "Bonjour") != 0) {
+		snprintf(exp, 128, "return %zu, dst unchanged", 4 + strlen(" Monde"));
+		snprintf(act, 128, "return %zu, dst '%s'", r, dst2);
+		snprintf(expl, 256, "ft_strlcat failed when size < dst_len");
+		snprintf(adv, 256, "If size <= dst_len, return size + src_len and do not modify dst.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- strchr & strrchr --- */
+static int test_strchr(char *exp, char *act, char *expl, char *adv) {
+	const char *s = "tripouille";
+
+	/* Find character */
+	char *res = ft_strchr(s, 'p');
+	if (res != s + 3) {
+		snprintf(exp, 128, "%p ('pouille')", (void*)(s + 3));
+		snprintf(act, 128, "%p", (void*)res);
+		snprintf(expl, 256, "ft_strchr did not locate character 'p'");
+		snprintf(adv, 256, "Return pointer to first occurrence.");
+		return 0;
+	}
+
+	/* Searching for null terminator '\\0' */
+	res = ft_strchr(s, '\0');
+	if (res != s + strlen(s)) {
+		snprintf(exp, 128, "Pointer to null terminator (%p)", (void*)(s + strlen(s)));
+		snprintf(act, 128, "%p", (void*)res);
+		snprintf(expl, 256, "ft_strchr must find the terminating '\\0'");
+		snprintf(adv, 256, "Include the terminating null byte in the search.");
+		return 0;
+	}
+
+	/* Absent character */
+	res = ft_strchr(s, 'z');
+	if (res != NULL) {
+		snprintf(exp, 128, "NULL");
+		snprintf(act, 128, "%p", (void*)res);
+		snprintf(expl, 256, "ft_strchr did not return NULL for absent char");
+		snprintf(adv, 256, "Return NULL if character is not found.");
+		return 0;
+	}
+	return 1;
+}
+
+static int test_strrchr(char *exp, char *act, char *expl, char *adv) {
+	const char *s = "tripouille";
+
+	/* Find last 'i' */
+	char *res = ft_strrchr(s, 'i');
+	if (res != s + 6) {
+		snprintf(exp, 128, "%p ('ille')", (void*)(s + 6));
+		snprintf(act, 128, "%p", (void*)res);
+		snprintf(expl, 256, "ft_strrchr did not find LAST occurrence of 'i'");
+		snprintf(adv, 256, "Scan from end or find latest match.");
+		return 0;
+	}
+
+	/* Search '\\0' */
+	res = ft_strrchr(s, '\0');
+	if (res != s + strlen(s)) {
+		snprintf(exp, 128, "%p (end)", (void*)(s + strlen(s)));
+		snprintf(act, 128, "%p", (void*)res);
+		snprintf(expl, 256, "ft_strrchr failed for '\\0'");
+		snprintf(adv, 256, "Include '\\0' in search.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- strncmp --- */
+static int test_strncmp(char *exp, char *act, char *expl, char *adv) {
+	/* Exact */
+	if (ft_strncmp("123", "123", 5) != 0) {
+		snprintf(exp, 128, "0");
+		snprintf(act, 128, "%d", ft_strncmp("123", "123", 5));
+		snprintf(expl, 256, "ft_strncmp failed on identical strings");
+		snprintf(adv, 256, "Return 0 when strings match.");
+		return 0;
+	}
+
+	/* Beyond n */
+	if (ft_strncmp("1234", "1235", 3) != 0) {
+		snprintf(exp, 128, "0");
+		snprintf(act, 128, "%d", ft_strncmp("1234", "1235", 3));
+		snprintf(expl, 256, "ft_strncmp compared past n characters");
+		snprintf(adv, 256, "Stop comparison at n characters.");
+		return 0;
+	}
+
+	/* Unsigned char test: \\200 vs \\0 */
+	int r = ft_strncmp("\200", "\0", 1);
+	if (r <= 0) {
+		snprintf(exp, 128, "Positive value (> 0)");
+		snprintf(act, 128, "%d", r);
+		snprintf(expl, 256, "ft_strncmp unsigned char comparison bug: \\200 treated as negative char");
+		snprintf(adv, 256, "Cast characters to (unsigned char) before comparing: (unsigned char)s1[i] - (unsigned char)s2[i].");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- memchr & memcmp --- */
+static int test_memchr(char *exp, char *act, char *expl, char *adv) {
+	char buf[] = "abcdef\0gh";
+	void *res = ft_memchr(buf, '\0', 8);
+	if (res != buf + 6) {
+		snprintf(exp, 128, "%p", (void*)(buf + 6));
+		snprintf(act, 128, "%p", res);
+		snprintf(expl, 256, "ft_memchr failed to find null byte inside binary buffer");
+		snprintf(adv, 256, "memchr treats memory as raw bytes, does not stop at '\\0'.");
+		return 0;
+	}
+	return 1;
+}
+
+static int test_memcmp(char *exp, char *act, char *expl, char *adv) {
+	/* Unsigned char difference */
+	char b1[] = "\200";
+	char b2[] = "\0";
+	int r = ft_memcmp(b1, b2, 1);
+	if (r <= 0) {
+		snprintf(exp, 128, "> 0");
+		snprintf(act, 128, "%d", r);
+		snprintf(expl, 256, "ft_memcmp signed char comparison error with byte > 127");
+		snprintf(adv, 256, "Cast bytes to (unsigned char) before subtraction.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- strnstr --- */
+static int test_strnstr(char *exp, char *act, char *expl, char *adv) {
+	const char *big = "Bar Baz Foo Bar";
+
+	/* Empty needle */
+	if (ft_strnstr(big, "", 10) != big) {
+		snprintf(exp, 128, "big pointer (%p)", (void*)big);
+		snprintf(act, 128, "%p", (void*)ft_strnstr(big, "", 10));
+		snprintf(expl, 256, "ft_strnstr with empty needle must return big");
+		snprintf(adv, 256, "If !*little, return (char*)big.");
+		return 0;
+	}
+
+	/* Match within len */
+	char *res = ft_strnstr(big, "Foo", 12);
+	if (res != big + 8) {
+		snprintf(exp, 128, "%p", (void*)(big + 8));
+		snprintf(act, 128, "%p", (void*)res);
+		snprintf(expl, 256, "ft_strnstr failed to find 'Foo'");
+		snprintf(adv, 256, "Check substring match within len.");
+		return 0;
+	}
+
+	/* Match beyond len */
+	res = ft_strnstr(big, "Foo", 9);
+	if (res != NULL) {
+		snprintf(exp, 128, "NULL");
+		snprintf(act, 128, "%p", (void*)res);
+		snprintf(expl, 256, "ft_strnstr found match extending past len");
+		snprintf(adv, 256, "Ensure entire little fits before len bytes.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- atoi --- */
+static int test_atoi(char *exp, char *act, char *expl, char *adv) {
+	struct { const char *s; int exp; } cases[] = {
+		{"0", 0},
+		{"42", 42},
+		{"-42", -42},
+		{"+42", 42},
+		{"   \t\n\v\f\r 1234", 1234},
+		{"2147483647", 2147483647},
+		{"-2147483648", -2147483648},
+		{"42abc", 42},
+		{"--42", 0},
+		{"++42", 0},
+		{"-0", 0},
+	};
+	for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); i++) {
+		int r = ft_atoi(cases[i].s);
+		if (r != cases[i].exp) {
+			snprintf(exp, 128, "%d for input '%s'", cases[i].exp, cases[i].s);
+			snprintf(act, 128, "%d", r);
+			snprintf(expl, 256, "ft_atoi mismatch on input '%s'", cases[i].s);
+			snprintf(adv, 256, "Skip standard isspace(), handle a single +/- sign, parse digits.");
+			return 0;
+		}
+	}
+	return 1;
+}
+
+/* --- calloc --- */
+static int test_calloc(char *exp, char *act, char *expl, char *adv) {
+	/* 1. Normal zero initialization */
+	char *p = ft_calloc(10, sizeof(char));
+	if (!p) {
+		snprintf(exp, 128, "Valid pointer");
+		snprintf(act, 128, "NULL");
+		snprintf(expl, 256, "ft_calloc returned NULL for valid allocation");
+		snprintf(adv, 256, "Check malloc success.");
+		return 0;
+	}
+	for (int i = 0; i < 10; i++) {
+		if (p[i] != 0) {
+			free(p);
+			snprintf(exp, 128, "Zeroed memory");
+			snprintf(act, 128, "Non-zero byte at index %d", i);
+			snprintf(expl, 256, "ft_calloc memory was not initialized to zero");
+			snprintf(adv, 256, "Zero allocated bytes with ft_bzero.");
+			return 0;
+		}
+	}
+	free(p);
+
+	/* 2. Zero size or nmemb */
+	p = ft_calloc(0, 10);
+	if (!p) {
+		snprintf(exp, 128, "Non-null freeable pointer");
+		snprintf(act, 128, "NULL");
+		snprintf(expl, 256, "ft_calloc(0, size) must return a non-null pointer that can be freed");
+		snprintf(adv, 256, "malloc(0) or allocate at least 1 byte.");
+		return 0;
+	}
+	free(p);
+
+	/* 3. Overflow protection */
+	p = ft_calloc((size_t)-1, 2);
+	if (p != NULL) {
+		free(p);
+		snprintf(exp, 128, "NULL (overflow detected)");
+		snprintf(act, 128, "Allocated pointer");
+		snprintf(expl, 256, "ft_calloc integer overflow: nmemb * size exceeded SIZE_MAX without returning NULL");
+		snprintf(adv, 256, "Check if (size != 0 && nmemb > SIZE_MAX / size) before allocating.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- strdup --- */
+static int test_strdup(char *exp, char *act, char *expl, char *adv) {
+	const char *orig = "Duplicate this string!";
+	char *dup = ft_strdup(orig);
+	if (!dup || dup == orig || strcmp(dup, orig) != 0) {
+		free(dup);
+		snprintf(exp, 128, "Distinct heap string matching original");
+		snprintf(act, 128, "Mismatch or NULL");
+		snprintf(expl, 256, "ft_strdup failed to clone string");
+		snprintf(adv, 256, "malloc(strlen(s) + 1) and copy.");
+		return 0;
+	}
+	free(dup);
+	return 1;
+}
+
+/* --- substr --- */
+static int test_substr(char *exp, char *act, char *expl, char *adv) {
+	/* 1. Normal */
+	char *s = ft_substr("tripouille", 0, 5);
+	if (!s || strcmp(s, "tripo") != 0) {
+		free(s);
+		snprintf(exp, 128, "'tripo'");
+		snprintf(act, 128, "'%s'", s ? s : "NULL");
+		snprintf(expl, 256, "ft_substr(\"tripouille\", 0, 5) failed");
+		snprintf(adv, 256, "Extract len characters from start.");
+		return 0;
+	}
+	free(s);
+
+	/* 2. start >= strlen(s) -> must return allocated empty string "" */
+	s = ft_substr("hello", 10, 5);
+	if (!s || strcmp(s, "") != 0) {
+		free(s);
+		snprintf(exp, 128, "Allocated empty string '\"\"'");
+		snprintf(act, 128, "'%s'", s ? s : "NULL");
+		snprintf(expl, 256, "ft_substr with start >= strlen must return an allocated empty string, not NULL");
+		snprintf(adv, 256, "if (start >= strlen(s)) return ft_strdup(\"\");");
+		return 0;
+	}
+	free(s);
+
+	/* 3. len > remaining string length */
+	s = ft_substr("hello", 2, 500);
+	if (!s || strcmp(s, "llo") != 0) {
+		free(s);
+		snprintf(exp, 128, "'llo'");
+		snprintf(act, 128, "'%s'", s ? s : "NULL");
+		snprintf(expl, 256, "ft_substr failed when len > remaining length");
+		snprintf(adv, 256, "Clamp len to strlen(s) - start so you don't allocate excessive memory.");
+		return 0;
+	}
+	free(s);
+	return 1;
+}
+
+/* --- strjoin --- */
+static int test_strjoin(char *exp, char *act, char *expl, char *adv) {
+	char *j = ft_strjoin("Hello", " 42!");
+	if (!j || strcmp(j, "Hello 42!") != 0) {
+		free(j);
+		snprintf(exp, 128, "'Hello 42!'");
+		snprintf(act, 128, "'%s'", j ? j : "NULL");
+		snprintf(expl, 256, "ft_strjoin basic join failed");
+		snprintf(adv, 256, "Allocate strlen(s1) + strlen(s2) + 1.");
+		return 0;
+	}
+	free(j);
+
+	j = ft_strjoin("", "");
+	if (!j || strcmp(j, "") != 0) {
+		free(j);
+		snprintf(exp, 128, "Allocated '\"\"'");
+		snprintf(act, 128, "'%s'", j ? j : "NULL");
+		snprintf(expl, 256, "ft_strjoin on empty strings failed");
+		snprintf(adv, 256, "Handle empty string inputs gracefully.");
+		return 0;
+	}
+	free(j);
+	return 1;
+}
+
+/* --- strtrim --- */
+static int test_strtrim(char *exp, char *act, char *expl, char *adv) {
+	/* 1. Normal trim */
+	char *t = ft_strtrim("  \t  hello world  \t ", " \t");
+	if (!t || strcmp(t, "hello world") != 0) {
+		free(t);
+		snprintf(exp, 128, "'hello world'");
+		snprintf(act, 128, "'%s'", t ? t : "NULL");
+		snprintf(expl, 256, "ft_strtrim failed to trim whitespace from ends");
+		snprintf(adv, 256, "Scan start with ft_strchr(set, s[start]), scan end backwards.");
+		return 0;
+	}
+	free(t);
+
+	/* 2. All characters trimmed */
+	t = ft_strtrim("xxxxxxx", "x");
+	if (!t || strcmp(t, "") != 0) {
+		free(t);
+		snprintf(exp, 128, "Allocated '\"\"'");
+		snprintf(act, 128, "'%s'", t ? t : "NULL");
+		snprintf(expl, 256, "ft_strtrim failed when all characters in s1 are in set");
+		snprintf(adv, 256, "If start > end, return ft_strdup(\"\").");
+		return 0;
+	}
+	free(t);
+	return 1;
+}
+
+/* --- split --- */
+static int test_split(char *exp, char *act, char *expl, char *adv) {
+	/* 1. Multiple delimiters and padding */
+	char **tab = ft_split("   hello   world   42  ", ' ');
+	if (!tab || !tab[0] || !tab[1] || !tab[2] || tab[3] != NULL) {
+		snprintf(exp, 128, "3 elements ['hello', 'world', '42', NULL]");
+		snprintf(act, 128, "Invalid array structure");
+		snprintf(expl, 256, "ft_split returned incorrect number of elements");
+		snprintf(adv, 256, "Handle multiple consecutive delimiters properly.");
+		return 0;
+	}
+	if (strcmp(tab[0], "hello") != 0 || strcmp(tab[1], "world") != 0 || strcmp(tab[2], "42") != 0) {
+		snprintf(exp, 128, "['hello', 'world', '42']");
+		snprintf(act, 128, "['%s', '%s', '%s']", tab[0], tab[1], tab[2]);
+		snprintf(expl, 256, "ft_split element content mismatch");
+		snprintf(adv, 256, "Extract words between delimiters.");
+		return 0;
+	}
+	for (int i = 0; tab[i]; i++) free(tab[i]);
+	free(tab);
+
+	/* 2. Only delimiters -> returns [NULL] */
+	tab = ft_split("     ", ' ');
+	if (!tab || tab[0] != NULL) {
+		snprintf(exp, 128, "Array with single NULL pointer [NULL]");
+		snprintf(act, 128, "Non-empty array or NULL");
+		snprintf(expl, 256, "ft_split on string with only delimiters must return a 1-element array [NULL]");
+		snprintf(adv, 256, "Allocate array of size 1 with tab[0] = NULL.");
+		return 0;
+	}
+	free(tab);
+	return 1;
+}
+
+/* --- itoa --- */
+static int test_itoa(char *exp, char *act, char *expl, char *adv) {
+	struct { int n; const char *s; } cases[] = {
+		{0, "0"},
+		{42, "42"},
+		{-42, "-42"},
+		{2147483647, "2147483647"},
+		{-2147483648, "-2147483648"},
+	};
+	for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); i++) {
+		char *s = ft_itoa(cases[i].n);
+		if (!s || strcmp(s, cases[i].s) != 0) {
+			snprintf(exp, 128, "'%s'", cases[i].s);
+			snprintf(act, 128, "'%s'", s ? s : "NULL");
+			snprintf(expl, 256, "ft_itoa mismatch for integer %d", cases[i].n);
+			snprintf(adv, 256, "Watch out for INT_MIN (-2147483648): negating it in signed 32-bit int causes overflow! Use long long.");
+			free(s);
+			return 0;
+		}
+		free(s);
+	}
+	return 1;
+}
+
+/* --- strmapi & striteri --- */
+static int test_strmapi(char *exp, char *act, char *expl, char *adv) {
+	char *res = ft_strmapi("abc", map_rot1);
+	if (!res || strcmp(res, "bcd") != 0) {
+		free(res);
+		snprintf(exp, 128, "'bcd'");
+		snprintf(act, 128, "'%s'", res ? res : "NULL");
+		snprintf(expl, 256, "ft_strmapi failed function application");
+		snprintf(adv, 256, "Apply f(i, s[i]) and return allocated string.");
+		return 0;
+	}
+	free(res);
+
+	res = ft_strmapi("aaa", map_index);
+	if (!res || strcmp(res, "abc") != 0) {
+		free(res);
+		snprintf(exp, 128, "'abc'");
+		snprintf(act, 128, "'%s'", res ? res : "NULL");
+		snprintf(expl, 256, "ft_strmapi did not pass index i to function f");
+		snprintf(adv, 256, "Pass index i as first parameter to f.");
+		return 0;
+	}
+	free(res);
+	return 1;
+}
+
+static int test_striteri(char *exp, char *act, char *expl, char *adv) {
+	char str[] = "abc";
+	ft_striteri(str, iter_rot1);
+	if (strcmp(str, "bcd") != 0) {
+		snprintf(exp, 128, "'bcd'");
+		snprintf(act, 128, "'%s'", str);
+		snprintf(expl, 256, "ft_striteri failed in-place modification");
+		snprintf(adv, 256, "Apply f(i, &s[i]) in-place.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- putchar_fd, putstr_fd, putendl_fd, putnbr_fd --- */
+static int test_put_fd(char *exp, char *act, char *expl, char *adv) {
+	int p[2];
+	if (pipe(p) < 0) return 1;
+
+	ft_putchar_fd('X', p[1]);
+	ft_putstr_fd("42", p[1]);
+	ft_putendl_fd("End", p[1]);
+	ft_putnbr_fd(-2147483648, p[1]);
+	close(p[1]);
+
+	char buf[64] = {0};
+	ssize_t bytes = read(p[0], buf, sizeof(buf) - 1);
+	close(p[0]);
+
+	const char *expected = "X42End\n-2147483648";
+	if (bytes < 0 || strcmp(buf, expected) != 0) {
+		snprintf(exp, 128, "'%s'", expected);
+		snprintf(act, 128, "'%s'", buf);
+		snprintf(expl, 256, "ft_put*_fd outputs do not match expected pipe data");
+		snprintf(adv, 256, "Use write(fd, ...) for all put*_fd functions.");
+		return 0;
+	}
+	return 1;
+}
+
+/* --- Bonus: t_list tests --- */
+static int test_bonus_lists(char *exp, char *act, char *expl, char *adv) {
+	/* lstnew */
+	t_list *elem1 = ft_lstnew(strdup("first"));
+	if (!elem1 || strcmp((char*)elem1->content, "first") != 0 || elem1->next != NULL) {
+		snprintf(exp, 128, "Node with content 'first', next == NULL");
+		snprintf(act, 128, "Invalid node");
+		snprintf(expl, 256, "ft_lstnew failed initialization");
+		snprintf(adv, 256, "Set node->content = content and node->next = NULL.");
+		return 0;
+	}
+
+	/* lstadd_front */
+	t_list *head = elem1;
+	t_list *elem0 = ft_lstnew(strdup("zero"));
+	ft_lstadd_front(&head, elem0);
+	if (head != elem0 || head->next != elem1) {
+		snprintf(exp, 128, "elem0 at head, followed by elem1");
+		snprintf(act, 128, "Incorrect head linkage");
+		snprintf(expl, 256, "ft_lstadd_front failed");
+		snprintf(adv, 256, "new->next = *lst; *lst = new;");
+		return 0;
+	}
+
+	/* lstsize */
+	if (ft_lstsize(head) != 2 || ft_lstsize(NULL) != 0) {
+		snprintf(exp, 128, "Size 2 and 0 for NULL");
+		snprintf(act, 128, "Size %d", ft_lstsize(head));
+		snprintf(expl, 256, "ft_lstsize returned incorrect count");
+		snprintf(adv, 256, "Iterate and count nodes.");
+		return 0;
+	}
+
+	/* lstlast */
+	if (ft_lstlast(head) != elem1 || ft_lstlast(NULL) != NULL) {
+		snprintf(exp, 128, "elem1 as last node");
+		snprintf(act, 128, "Mismatch");
+		snprintf(expl, 256, "ft_lstlast failed");
+		snprintf(adv, 256, "Iterate while lst->next != NULL.");
+		return 0;
+	}
+
+	/* lstadd_back */
+	t_list *elem2 = ft_lstnew(strdup("second"));
+	ft_lstadd_back(&head, elem2);
+	if (ft_lstlast(head) != elem2 || ft_lstsize(head) != 3) {
+		snprintf(exp, 128, "elem2 at tail of list, size 3");
+		snprintf(act, 128, "Mismatch");
+		snprintf(expl, 256, "ft_lstadd_back failed to append node");
+		snprintf(adv, 256, "Find last node and link last->next = new.");
+		return 0;
+	}
+
+	/* lstmap */
+	t_list *mapped = ft_lstmap(head, map_dup, free);
+	if (!mapped || ft_lstsize(mapped) != 3) {
+		snprintf(exp, 128, "New list of size 3");
+		snprintf(act, 128, "NULL or wrong size");
+		snprintf(expl, 256, "ft_lstmap failed to clone and map list");
+		snprintf(adv, 256, "Iterate, apply f(), create new nodes, handle failure with ft_lstclear.");
+		return 0;
+	}
+	ft_lstclear(&mapped, free);
+
+	/* lstclear & del */
+	g_del_count = 0;
+	ft_lstclear(&head, del_counter);
+	if (head != NULL || g_del_count != 3) {
+		snprintf(exp, 128, "head == NULL, 3 deletions");
+		snprintf(act, 128, "head = %p, del_count = %d", (void*)head, g_del_count);
+		snprintf(expl, 256, "ft_lstclear did not delete all elements or did not set *lst = NULL");
+		snprintf(adv, 256, "Call del() on each content, free node, and set *lst = NULL.");
+		return 0;
+	}
+	return 1;
+}
+
+/* ========================================================================= */
+/* TEST TABLE                                                                */
+/* ========================================================================= */
+
+static const t_test_entry g_tests[] = {
+	{"libft_isalpha_alpha", "ft_isalpha", "Alphabetical character ranges", "MANDATORY", "Tests lowercase a-z and uppercase A-Z return non-zero", test_isalpha_alpha},
+	{"libft_isalpha_nonalpha", "ft_isalpha", "Non-alpha characters and boundaries", "MANDATORY", "Tests digits, symbols, EOF return 0", test_isalpha_nonalpha},
+	{"libft_isdigit_digits", "ft_isdigit", "Decimal digits '0'-'9'", "MANDATORY", "Tests digits 0-9 return non-zero", test_isdigit_digits},
+	{"libft_isdigit_nondigits", "ft_isdigit", "Non-digit characters", "MANDATORY", "Tests characters outside '0'-'9' return 0", test_isdigit_nondigits},
+	{"libft_isalnum_valid", "ft_isalnum", "Alphanumeric characters", "MANDATORY", "Tests letters and numbers return non-zero", test_isalnum_valid},
+	{"libft_isalnum_invalid", "ft_isalnum", "Punctuation and whitespace", "MANDATORY", "Tests symbols and whitespace return 0", test_isalnum_invalid},
+	{"libft_isascii", "ft_isascii", "ASCII 7-bit boundaries [0, 127]", "MANDATORY", "Tests valid ASCII range 0-127 and out of bounds", test_isascii},
+	{"libft_isprint", "ft_isprint", "Printable ASCII range [32, 126]", "MANDATORY", "Tests printable chars and control codes return 0", test_isprint},
+	{"libft_strlen", "ft_strlen", "String length calculation", "MANDATORY", "Tests empty string and regular strings", test_strlen},
+	{"libft_memset", "ft_memset", "Memory byte fill and casting", "MANDATORY", "Tests filling memory buffer and unsigned char casting for c > 255", test_memset},
+	{"libft_bzero", "ft_bzero", "Zero out memory buffer", "MANDATORY", "Tests zeroing byte range without affecting surrounding bytes", test_bzero},
+	{"libft_memcpy", "ft_memcpy", "Memory copy without overlap", "MANDATORY", "Tests copying memory buffer and return value", test_memcpy},
+	{"libft_memmove_overlap", "ft_memmove", "Overlapping memory safety", "MANDATORY", "Tests forward and backward overlapping copies without memory corruption", test_memmove_overlap},
+	{"libft_strlcpy", "ft_strlcpy", "Bounded string copy and null termination", "MANDATORY", "Tests truncation, buffer size 0, and return value", test_strlcpy},
+	{"libft_strlcat", "ft_strlcat", "Bounded string concatenation", "MANDATORY", "Tests concatenation, size <= dst_len, and null termination", test_strlcat},
+	{"libft_strchr", "ft_strchr", "Locate first character or null terminator", "MANDATORY", "Tests finding char, absent char, and '\\0' search", test_strchr},
+	{"libft_strrchr", "ft_strrchr", "Locate last character occurrence", "MANDATORY", "Tests finding last occurrence and '\\0' search", test_strrchr},
+	{"libft_strncmp", "ft_strncmp", "Bounded string compare and unsigned cast", "MANDATORY", "Tests exact match, length n bound, and unsigned char cast (\\200 vs \\0)", test_strncmp},
+	{"libft_memchr", "ft_memchr", "Scan raw memory byte buffer", "MANDATORY", "Tests finding byte and scanning through binary '\\0'", test_memchr},
+	{"libft_memcmp", "ft_memcmp", "Binary memory comparison", "MANDATORY", "Tests byte buffer equality and unsigned comparison", test_memcmp},
+	{"libft_strnstr", "ft_strnstr", "Locate substring within length limit", "MANDATORY", "Tests empty needle, substring within len, and boundary limits", test_strnstr},
+	{"libft_atoi", "ft_atoi", "String to integer conversion and edge cases", "MANDATORY", "Tests whitespace, +/- signs, INT_MIN, and INT_MAX", test_atoi},
+	{"libft_calloc", "ft_calloc", "Zero-initialized allocation and overflow protection", "MANDATORY", "Tests zero initialization, 0 count, and multiplication overflow check", test_calloc},
+	{"libft_strdup", "ft_strdup", "Duplicate string to heap", "MANDATORY", "Tests distinct allocated duplicate and empty string", test_strdup},
+	{"libft_substr", "ft_substr", "Extract substring and edge conditions", "MANDATORY", "Tests normal extraction, start >= len, and len > remaining string", test_substr},
+	{"libft_strjoin", "ft_strjoin", "Concatenate two strings into new heap string", "MANDATORY", "Tests joining strings and empty string inputs", test_strjoin},
+	{"libft_strtrim", "ft_strtrim", "Trim set characters from both ends", "MANDATORY", "Tests trimming set characters, empty strings, and full trims", test_strtrim},
+	{"libft_split", "ft_split", "Split string by delimiter into array", "MANDATORY", "Tests multiple consecutive delimiters, empty strings, and array structure", test_split},
+	{"libft_itoa", "ft_itoa", "Integer to ASCII conversion and INT_MIN", "MANDATORY", "Tests 0, positive, negative, and INT_MIN (-2147483648)", test_itoa},
+	{"libft_strmapi", "ft_strmapi", "Apply indexed mapping function to string", "MANDATORY", "Tests function application with index parameter", test_strmapi},
+	{"libft_striteri", "ft_striteri", "Apply indexed in-place iterator to string", "MANDATORY", "Tests in-place modification with index parameter", test_striteri},
+	{"libft_put_fd", "ft_put_fd", "File descriptor output functions", "MANDATORY", "Tests ft_putchar_fd, ft_putstr_fd, ft_putendl_fd, ft_putnbr_fd via pipe", test_put_fd},
+	{"libft_bonus_lists", "t_list", "Linked list functions suite (Bonus)", "BONUS", "Tests ft_lstnew, ft_lstadd_front, ft_lstsize, ft_lstlast, ft_lstadd_back, ft_lstclear, ft_lstmap", test_bonus_lists},
+};
+
+static const size_t g_num_tests = sizeof(g_tests) / sizeof(g_tests[0]);
+
+int main(int argc, char **argv) {
+	if (argc < 2) {
+		fprintf(stderr, "Usage: %s <list|run <id>>\n", argv[0]);
+		return 1;
+	}
+
+	if (strcmp(argv[1], "list") == 0) {
+		for (size_t i = 0; i < g_num_tests; i++) {
+			printf("%s\t%s\t%s\t%s\t%s\n",
+				g_tests[i].id,
+				g_tests[i].module,
+				g_tests[i].name,
+				g_tests[i].category,
+				g_tests[i].desc);
+		}
+		return 0;
+	}
+
+	if (strcmp(argv[1], "run") == 0 && argc >= 3) {
+		const char *target_id = argv[2];
+		for (size_t i = 0; i < g_num_tests; i++) {
+			if (strcmp(g_tests[i].id, target_id) == 0) {
+				char exp[256] = {0};
+				char act[256] = {0};
+				char expl[512] = {0};
+				char adv[512] = {0};
+
+				int pass = g_tests[i].fn(exp, act, expl, adv);
+				if (pass) {
+					printf("STATUS: PASS\n");
+				} else {
+					printf("STATUS: FAIL\n");
+					printf("EXPECTED: %s\n", exp);
+					printf("ACTUAL: %s\n", act);
+					printf("EXPLANATION: %s\n", expl);
+					printf("ADVICE: %s\n", adv);
+				}
+				return pass ? 0 : 1;
+			}
+		}
+		fprintf(stderr, "Unknown test id: %s\n", target_id);
+		return 2;
+	}
+
+	return 1;
+}

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -70,8 +71,12 @@ func (r *Runner) Run(ctx context.Context, binaryPath string, opts RunOptions) (*
 	}
 
 	// Setup environment: inherit current env + pass ASAN settings
+	asanOpts := "abort_on_error=1:color=never"
+	if runtime.GOOS == "linux" {
+		asanOpts = "detect_leaks=1:abort_on_error=1:color=never"
+	}
 	cmd.Env = append(os.Environ(),
-		"ASAN_OPTIONS=detect_leaks=1:abort_on_error=1:color=never",
+		"ASAN_OPTIONS="+asanOpts,
 	)
 	cmd.Env = append(cmd.Env, opts.Env...)
 

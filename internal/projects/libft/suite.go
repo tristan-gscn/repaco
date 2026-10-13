@@ -2,9 +2,11 @@ package libft
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/tristan-gscn/repaco/internal/builder"
@@ -13,9 +15,15 @@ import (
 	"github.com/tristan-gscn/repaco/internal/model"
 	"github.com/tristan-gscn/repaco/internal/projects"
 	"github.com/tristan-gscn/repaco/internal/runner"
+	"github.com/tristan-gscn/repaco/pkg/diff"
 )
 
-type Suite struct{}
+//go:embed harness.c.template
+var harnessSource string
+
+type Suite struct {
+	harnessPath string
+}
 
 func init() {
 	projects.Register(&Suite{})
@@ -30,16 +38,16 @@ func (s *Suite) Metadata() model.ProjectMetadata {
 }
 
 func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *builder.Builder) (*model.TestResult, error) {
-	// Check Makefile compliance
+	// 1. Check Makefile compliance
 	check, err := b.CheckMakefile(ctx, dir, "libft.a")
 	if err != nil {
 		return &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_makefile",
-				Module:      "makefile",
-				Name:        "Makefile compliance",
+				Module:      "Makefile",
+				Name:        "Makefile compliance check",
 				Category:    model.CategoryBuild,
-				Description: "Verifies mandatory rules, flags, and relink",
+				Description: "Verifies mandatory rules, compiler flags, and relink behavior",
 			},
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Makefile check failed: %v", err),
@@ -47,12 +55,27 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 		}, nil
 	}
 
+	if len(check.MissingRules) > 0 {
+		return &model.TestResult{
+			Case: model.TestCase{
+				ID:          "libft_build_rules",
+				Module:      "Makefile",
+				Name:        "Mandatory Makefile rules",
+				Category:    model.CategoryBuild,
+				Description: "Checks presence of rules all, clean, fclean, re",
+			},
+			Status:      model.StatusFailed,
+			Explanation: fmt.Sprintf("Missing mandatory rules: %s", strings.Join(check.MissingRules, ", ")),
+			Advice:      "Define rules $(NAME), all, clean, fclean, and re in your Makefile.",
+		}, nil
+	}
+
 	if check.RelinkDetected {
 		return &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_relink",
-				Module:      "makefile",
-				Name:        "Relink check",
+				Module:      "Makefile",
+				Name:        "Relink verification",
 				Category:    model.CategoryBuild,
 				Description: "Makefile must not relink when no files are modified",
 			},
@@ -62,7 +85,7 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 		}, nil
 	}
 
-	// Verify libft.a is generated
+	// 2. Compile libft.a
 	libPath := filepath.Join(dir, "libft.a")
 	if _, err := os.Stat(libPath); os.IsNotExist(err) {
 		out, err := b.ExecuteMake(ctx, dir, "all", 30*time.Second)
@@ -70,79 +93,192 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			return &model.TestResult{
 				Case: model.TestCase{
 					ID:          "libft_build_compile",
-					Module:      "build",
+					Module:      "Makefile",
 					Name:        "make all compilation",
 					Category:    model.CategoryBuild,
-					Description: "Compiles libft.a",
+					Description: "Compiles libft.a archive",
 				},
 				Status:      model.StatusFailed,
 				Explanation: fmt.Sprintf("Failed to compile libft.a:\n%s", out),
-				Advice:      "Fix C compilation errors or missing dependencies.",
+				Advice:      "Fix compilation errors or missing dependencies.",
 			}, nil
 		}
+	}
+
+	// Try compiling bonus if rule exists
+	_, _ = b.ExecuteMake(ctx, dir, "bonus", 15*time.Second)
+
+	// 3. Write and compile C harness
+	workDir := filepath.Join(dir, ".repaco")
+	if err := os.MkdirAll(workDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create .repaco directory: %w", err)
+	}
+
+	harnessSrcPath := filepath.Join(workDir, "libft_harness.c")
+	if err := os.WriteFile(harnessSrcPath, []byte(harnessSource), 0644); err != nil {
+		return nil, fmt.Errorf("failed to write harness source: %w", err)
+	}
+
+	s.harnessPath = filepath.Join(workDir, "libft_harness")
+	extraFlags := []string{"-fsanitize=address,undefined", "-g"}
+	linkLibs := []string{"-L" + dir, "-lft"}
+	includeDirs := []string{dir}
+
+	out, err := b.CompileHarness(ctx, harnessSrcPath, s.harnessPath, includeDirs, extraFlags, linkLibs)
+	if err != nil {
+		return &model.TestResult{
+			Case: model.TestCase{
+				ID:          "libft_build_harness",
+				Module:      "Build",
+				Name:        "Test harness compilation",
+				Category:    model.CategoryBuild,
+				Description: "Compiles test harness linking against libft.a with AddressSanitizer",
+			},
+			Status:      model.StatusFailed,
+			Explanation: fmt.Sprintf("Failed to link against libft.a:\n%s", out),
+			Advice:      "Check that libft.a exports all prototypes declared in libft.h without missing symbols.",
+		}, nil
 	}
 
 	return &model.TestResult{
 		Case: model.TestCase{
 			ID:          "libft_build_success",
-			Module:      "build",
+			Module:      "Build",
 			Name:        "Build & Makefile verification",
 			Category:    model.CategoryBuild,
-			Description: "libft.a built successfully with -Wall -Wextra -Werror without relink",
+			Description: "libft.a built cleanly with -Wall -Wextra -Werror, without relink",
 		},
 		Status: model.StatusPassed,
 	}, nil
 }
 
 func (s *Suite) Plan(ctx context.Context, dir string, cfg *config.Config) ([]model.TestCase, error) {
-	// Baseline plan: individual functions can be tested
-	functions := []string{
-		"ft_isalpha", "ft_isdigit", "ft_isalnum", "ft_isascii", "ft_isprint",
-		"ft_strlen", "ft_memset", "ft_bzero", "ft_memcpy", "ft_memmove",
-		"ft_strlcpy", "ft_strlcat", "ft_toupper", "ft_tolower", "ft_strchr",
-		"ft_strrchr", "ft_strncmp", "ft_memchr", "ft_memcmp", "ft_strnstr",
-		"ft_atoi", "ft_calloc", "ft_strdup",
-		"ft_substr", "ft_strjoin", "ft_strtrim", "ft_split", "ft_itoa",
-		"ft_strmapi", "ft_striteri", "ft_putchar_fd", "ft_putstr_fd", "ft_putendl_fd", "ft_putnbr_fd",
+	if s.harnessPath == "" {
+		return nil, fmt.Errorf("harness not compiled yet")
+	}
+
+	r := runner.New(cfg.DefaultTimeout)
+	res, err := r.Run(ctx, s.harnessPath, runner.RunOptions{
+		Args: []string{"list"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tests from harness: %w", err)
 	}
 
 	var plan []model.TestCase
-	for _, fn := range functions {
-		if cfg.FilterModule != "" && cfg.FilterModule != fn {
+	lines := strings.Split(strings.TrimSpace(res.Stdout), "\n")
+	for _, l := range lines {
+		parts := strings.Split(l, "\t")
+		if len(parts) < 5 {
 			continue
 		}
-		plan = append(plan, model.TestCase{
-			ID:          fmt.Sprintf("libft_%s", fn),
-			Module:      fn,
-			Name:        fmt.Sprintf("Test %s", fn),
-			Description: fmt.Sprintf("Comprehensive unit tests for %s", fn),
-			Category:    model.CategoryMandatory,
+		tc := model.TestCase{
+			ID:          parts[0],
+			Module:      parts[1],
+			Name:        parts[2],
+			Category:    model.Category(parts[3]),
+			Description: parts[4],
 			Timeout:     3 * time.Second,
-		})
+		}
+		if cfg.FilterModule != "" && cfg.FilterModule != tc.Module {
+			continue
+		}
+		plan = append(plan, tc)
 	}
+
 	return plan, nil
 }
 
 func (s *Suite) RunCase(ctx context.Context, dir string, tc model.TestCase, cfg *config.Config, b *builder.Builder, r *runner.Runner) (*model.TestResult, error) {
-	// Initial foundation implementation: verifies the function symbol or file exists
-	fnName := tc.Module
-	cFile := filepath.Join(dir, fnName+".c")
-	if _, err := os.Stat(cFile); os.IsNotExist(err) {
+	if s.harnessPath == "" {
+		return nil, fmt.Errorf("harness binary not found")
+	}
+
+	res, err := r.Run(ctx, s.harnessPath, runner.RunOptions{
+		Args:    []string{"run", tc.ID},
+		Timeout: tc.Timeout,
+	})
+	if err != nil {
 		return &model.TestResult{
 			Case:        tc,
 			Status:      model.StatusFailed,
-			Explanation: fmt.Sprintf("Source file %s.c not found", fnName),
-			Advice:      fmt.Sprintf("Create and implement %s.c conforming to the 42 subject", fnName),
+			Explanation: fmt.Sprintf("Process execution error: %v", err),
 		}, nil
 	}
 
-	return &model.TestResult{
-		Case:        tc,
-		Status:      model.StatusPassed,
-		Explanation: fmt.Sprintf("%s.c source exists and compiles in library", fnName),
-	}, nil
+	// 1. Process Crashed (SIGSEGV, SIGBUS, etc.)
+	if res.Crashed {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusCrash,
+			Duration:    res.Duration,
+			Explanation: res.Explanation,
+			Signal:      res.Signal,
+			Advice:      "Check for null pointer dereference, out-of-bounds array access, or uninitialized memory.",
+		}, nil
+	}
+
+	// 2. Process Timed out (Infinite loop)
+	if res.TimedOut {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusTimeout,
+			Duration:    res.Duration,
+			Explanation: res.Explanation,
+			Advice:      "Check loop termination conditions (e.g., pointer increment or boundary checks).",
+		}, nil
+	}
+
+	// 3. Memory leak / corruption reported by AddressSanitizer
+	if res.Status == model.StatusLeak {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusLeak,
+			Duration:    res.Duration,
+			Explanation: res.Explanation,
+			LeaksReport: res.LeakReport,
+			Advice:      "Ensure all memory allocated with malloc() is properly freed before returning.",
+		}, nil
+	}
+
+	// 4. Parse harness output
+	testRes := &model.TestResult{
+		Case:     tc,
+		Duration: res.Duration,
+	}
+
+	stdout := strings.TrimSpace(res.Stdout)
+	lines := strings.Split(stdout, "\n")
+	var expected, actual, explanation, advice string
+
+	for _, line := range lines {
+		if strings.HasPrefix(line, "STATUS: PASS") {
+			testRes.Status = model.StatusPassed
+			return testRes, nil
+		}
+		if strings.HasPrefix(line, "EXPECTED: ") {
+			expected = strings.TrimPrefix(line, "EXPECTED: ")
+		} else if strings.HasPrefix(line, "ACTUAL: ") {
+			actual = strings.TrimPrefix(line, "ACTUAL: ")
+		} else if strings.HasPrefix(line, "EXPLANATION: ") {
+			explanation = strings.TrimPrefix(line, "EXPLANATION: ")
+		} else if strings.HasPrefix(line, "ADVICE: ") {
+			advice = strings.TrimPrefix(line, "ADVICE: ")
+		}
+	}
+
+	testRes.Status = model.StatusFailed
+	testRes.Expected = expected
+	testRes.Actual = actual
+	testRes.Explanation = explanation
+	testRes.Advice = advice
+	testRes.Diff = diff.Compare(expected, actual)
+
+	return testRes, nil
 }
 
 func (s *Suite) Cleanup(ctx context.Context, dir string) error {
+	workDir := filepath.Join(dir, ".repaco")
+	_ = os.RemoveAll(workDir)
 	return nil
 }
