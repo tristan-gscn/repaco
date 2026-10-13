@@ -113,14 +113,25 @@ func (m Model) renderNearbyProjectsView(width, height int) string {
 	}
 
 	leftFitted := wrapAndFit(leftB.String(), leftInnerW, innerH)
-	leftPane := ActivePanelStyle.Width(leftInnerW).Height(innerH).Render(leftFitted)
+	leftPanelStyle := ActivePanelStyle
+	rightPanelStyle := PanelStyle
+	if m.focusRight {
+		leftPanelStyle = PanelStyle
+		rightPanelStyle = ActivePanelStyle
+	}
+	leftPane := leftPanelStyle.Width(leftInnerW).Height(innerH).Render(leftFitted)
 
 	// 4. Right Pane: Detailed Inspection of selected nearby project
 	var rightB strings.Builder
 	if m.nearbyCursor >= 0 && m.nearbyCursor < len(m.nearbyProjects) {
 		selected := m.nearbyProjects[m.nearbyCursor]
 
-		rightB.WriteString(" " + DetailTitleStyle.Render(selected.Detection.Project.Name) + "\n")
+		rightB.WriteString(" " + DetailTitleStyle.Render(selected.Detection.Project.Name))
+		if m.focusRight {
+			rightB.WriteString("  " + AdviceStyle.Render("[SCROLLING: ▲/▼ • LEFT to return]") + "\n")
+		} else {
+			rightB.WriteString("  " + MutedTextStyle.Render("[RIGHT / TAB to scroll]") + "\n")
+		}
 		rightB.WriteString(" " + MutedTextStyle.Render(selected.Detection.Project.Description) + "\n\n")
 
 		rightB.WriteString(" " + SectionLabelStyle.Render("Target Location:") + "\n")
@@ -139,24 +150,30 @@ func (m Model) renderNearbyProjectsView(width, height int) string {
 		}
 
 		if len(selected.Detection.FoundFiles) > 0 {
-			rightB.WriteString("\n " + SectionLabelStyle.Render("Key Files Identified:") + "\n")
-			limit := 8
-			if len(selected.Detection.FoundFiles) < limit {
-				limit = len(selected.Detection.FoundFiles)
-			}
-			for i := 0; i < limit; i++ {
-				rightB.WriteString(fmt.Sprintf("   %s %s\n", BadgePass.Render("✔"), selected.Detection.FoundFiles[i]))
-			}
-			if len(selected.Detection.FoundFiles) > limit {
-				rightB.WriteString(fmt.Sprintf("   ... and %d more files\n", len(selected.Detection.FoundFiles)-limit))
+			rightB.WriteString("\n " + SectionLabelStyle.Render(fmt.Sprintf("Key Files Identified (%d):", len(selected.Detection.FoundFiles))) + "\n")
+			for _, f := range selected.Detection.FoundFiles {
+				rightB.WriteString(fmt.Sprintf("   %s %s\n", BadgePass.Render("✔"), f))
 			}
 		}
 
 		rightB.WriteString("\n " + AdviceStyle.Render("👉 Press [Enter] to run tests on this project now"))
 	}
 
-	rightFitted := wrapAndFit(rightB.String(), rightInnerW, innerH)
-	rightPane := PanelStyle.Width(rightInnerW).Height(innerH).Render(rightFitted)
+	rightFitted, scrollOffset, totalLines := wrapAndScroll(rightB.String(), rightInnerW, innerH, m.detailScroll)
+	m.detailScroll = scrollOffset
+	rightPane := rightPanelStyle.Width(rightInnerW).Height(innerH).Render(rightFitted)
+
+	var bottomText string
+	if m.focusRight {
+		if totalLines > innerH {
+			bottomText = fmt.Sprintf("Scrolling details: UP/DOWN (Line %d/%d) • Return: [LEFT / ESC] • Test: [Enter] • Quit: [q]", scrollOffset+1, totalLines)
+		} else {
+			bottomText = "Details active • Return: [LEFT / ESC] • Test: [Enter] • Quit: [q]"
+		}
+	} else {
+		bottomText = "Choose project: UP/DOWN • Scroll details: TAB / RIGHT • Test: [Enter] • Quit: [q / ESC]"
+	}
+	bottomBar = FooterBarStyle.Width(width).Render(MutedTextStyle.Render(bottomText))
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 	return lipgloss.JoinVertical(lipgloss.Left, topHeader, body, bottomBar)
@@ -217,14 +234,25 @@ func (m Model) renderDiscoveryView(width, height int) string {
 	}
 
 	leftFitted := wrapAndFit(leftB.String(), leftInnerW, innerH)
-	leftPane := ActivePanelStyle.Width(leftInnerW).Height(innerH).Render(leftFitted)
+	leftPanelStyle := ActivePanelStyle
+	rightPanelStyle := PanelStyle
+	if m.focusRight {
+		leftPanelStyle = PanelStyle
+		rightPanelStyle = ActivePanelStyle
+	}
+	leftPane := leftPanelStyle.Width(leftInnerW).Height(innerH).Render(leftFitted)
 
 	// 4. Right Pane: Selected Project Inspection & Missing Files
 	var rightB strings.Builder
 	if m.discoveryCursor >= 0 && m.discoveryCursor < len(m.knownProjects) {
 		selected := m.knownProjects[m.discoveryCursor]
 
-		rightB.WriteString(" " + DetailTitleStyle.Render(selected.Name) + "\n")
+		rightB.WriteString(" " + DetailTitleStyle.Render(selected.Name))
+		if m.focusRight {
+			rightB.WriteString("  " + AdviceStyle.Render("[SCROLLING: ▲/▼ • LEFT to return]") + "\n")
+		} else {
+			rightB.WriteString("  " + MutedTextStyle.Render("[RIGHT / TAB to scroll checklist]") + "\n")
+		}
 		rightB.WriteString(" " + MutedTextStyle.Render(selected.Description) + "\n\n")
 
 		if selected.BinaryName != "" {
@@ -233,7 +261,7 @@ func (m Model) renderDiscoveryView(width, height int) string {
 			rightB.WriteString(" " + SectionLabelStyle.Render("Expected Target:") + " " + selected.LibraryName + " (Static Library)\n\n")
 		}
 
-		rightB.WriteString(" " + SectionLabelStyle.Render("File Signature Checklist in Current Directory:") + "\n")
+		rightB.WriteString(" " + SectionLabelStyle.Render(fmt.Sprintf("File Signature Checklist in Current Directory (%d required):", len(selected.RequiredFiles))) + "\n")
 		for _, req := range selected.RequiredFiles {
 			if m.checkFileExists(req) {
 				rightB.WriteString(fmt.Sprintf("   %s %s\n", BadgePass.Render("✔"), req))
@@ -243,7 +271,7 @@ func (m Model) renderDiscoveryView(width, height int) string {
 		}
 
 		if len(selected.BonusFiles) > 0 {
-			rightB.WriteString("\n " + SectionLabelStyle.Render("Bonus Files:") + "\n")
+			rightB.WriteString("\n " + SectionLabelStyle.Render(fmt.Sprintf("Bonus Files (%d):", len(selected.BonusFiles))) + "\n")
 			for _, b := range selected.BonusFiles {
 				if m.checkFileExists(b) {
 					rightB.WriteString(fmt.Sprintf("   %s %s\n", BadgePass.Render("✔"), b))
@@ -258,8 +286,21 @@ func (m Model) renderDiscoveryView(width, height int) string {
 		rightB.WriteString(fmt.Sprintf("   2. Run: repaco /path/to/%s\n", strings.ToLower(selected.Name)))
 	}
 
-	rightFitted := wrapAndFit(rightB.String(), rightInnerW, innerH)
-	rightPane := PanelStyle.Width(rightInnerW).Height(innerH).Render(rightFitted)
+	rightFitted, scrollOffset, totalLines := wrapAndScroll(rightB.String(), rightInnerW, innerH, m.detailScroll)
+	m.detailScroll = scrollOffset
+	rightPane := rightPanelStyle.Width(rightInnerW).Height(innerH).Render(rightFitted)
+
+	var bottomText string
+	if m.focusRight {
+		if totalLines > innerH {
+			bottomText = fmt.Sprintf("Scrolling checklist: UP/DOWN (Line %d/%d) • Return: [LEFT / ESC] • Quit: [q]", scrollOffset+1, totalLines)
+		} else {
+			bottomText = "Checklist active • Return: [LEFT / ESC] • Quit: [q]"
+		}
+	} else {
+		bottomText = "Select project: UP/DOWN • Scroll checklist: TAB / RIGHT • Quit: [q / ESC]"
+	}
+	bottomBar = FooterBarStyle.Width(width).Render(MutedTextStyle.Render(bottomText))
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
 	return lipgloss.JoinVertical(lipgloss.Left, topHeader, body, bottomBar)

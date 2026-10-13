@@ -221,7 +221,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "right":
-			if !m.isNearbyMode && !m.isDiscovery && len(m.results) > 0 {
+			if m.isNearbyMode || m.isDiscovery {
+				m.focusRight = true
+				return m, nil
+			}
+			if len(m.results) > 0 {
 				treeRows := m.buildTreeRows()
 				if m.cursor >= 0 && m.cursor < len(treeRows) {
 					row := treeRows[m.cursor]
@@ -266,10 +270,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "tab":
-			if !m.isNearbyMode && !m.isDiscovery && len(m.results) > 0 {
-				m.focusRight = !m.focusRight
-				return m, nil
-			}
+			m.focusRight = !m.focusRight
+			return m, nil
 
 		case "enter", " ":
 			if m.isNearbyMode && len(m.nearbyProjects) > 0 {
@@ -321,21 +323,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "up":
+			if m.focusRight {
+				if m.detailScroll > 0 {
+					m.detailScroll--
+				}
+				return m, nil
+			}
 			if m.isNearbyMode {
 				if m.nearbyCursor > 0 {
 					m.nearbyCursor--
+					m.detailScroll = 0
 				}
 				return m, nil
 			}
 			if m.isDiscovery {
 				if m.discoveryCursor > 0 {
 					m.discoveryCursor--
-				}
-				return m, nil
-			}
-			if m.focusRight {
-				if m.detailScroll > 0 {
-					m.detailScroll--
+					m.detailScroll = 0
 				}
 				return m, nil
 			}
@@ -345,20 +349,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down":
+			if m.focusRight {
+				m.detailScroll++
+				return m, nil
+			}
 			if m.isNearbyMode {
 				if m.nearbyCursor < len(m.nearbyProjects)-1 {
 					m.nearbyCursor++
+					m.detailScroll = 0
 				}
 				return m, nil
 			}
 			if m.isDiscovery {
 				if m.discoveryCursor < len(m.knownProjects)-1 {
 					m.discoveryCursor++
+					m.detailScroll = 0
 				}
-				return m, nil
-			}
-			if m.focusRight {
-				m.detailScroll++
 				return m, nil
 			}
 			treeRows := m.buildTreeRows()
@@ -373,6 +379,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.detailScroll < 0 {
 					m.detailScroll = 0
 				}
+			} else if m.isNearbyMode {
+				m.nearbyCursor -= 5
+				if m.nearbyCursor < 0 {
+					m.nearbyCursor = 0
+				}
+				m.detailScroll = 0
+			} else if m.isDiscovery {
+				m.discoveryCursor -= 5
+				if m.discoveryCursor < 0 {
+					m.discoveryCursor = 0
+				}
+				m.detailScroll = 0
 			} else {
 				m.cursor -= 10
 				if m.cursor < 0 {
@@ -384,6 +402,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "pgdown", "pagedown":
 			if m.focusRight {
 				m.detailScroll += 6
+			} else if m.isNearbyMode {
+				m.nearbyCursor += 5
+				if m.nearbyCursor >= len(m.nearbyProjects) {
+					m.nearbyCursor = len(m.nearbyProjects) - 1
+					if m.nearbyCursor < 0 {
+						m.nearbyCursor = 0
+					}
+				}
+				m.detailScroll = 0
+			} else if m.isDiscovery {
+				m.discoveryCursor += 5
+				if m.discoveryCursor >= len(m.knownProjects) {
+					m.discoveryCursor = len(m.knownProjects) - 1
+					if m.discoveryCursor < 0 {
+						m.discoveryCursor = 0
+					}
+				}
+				m.detailScroll = 0
 			} else {
 				treeRows := m.buildTreeRows()
 				m.cursor += 10
@@ -399,6 +435,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "home":
 			if m.focusRight {
 				m.detailScroll = 0
+			} else if m.isNearbyMode {
+				m.nearbyCursor = 0
+				m.detailScroll = 0
+			} else if m.isDiscovery {
+				m.discoveryCursor = 0
+				m.detailScroll = 0
 			} else {
 				m.cursor = 0
 				m.detailScroll = 0
@@ -407,6 +449,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "end":
 			if m.focusRight {
 				m.detailScroll = 9999
+			} else if m.isNearbyMode {
+				if len(m.nearbyProjects) > 0 {
+					m.nearbyCursor = len(m.nearbyProjects) - 1
+				}
+				m.detailScroll = 0
+			} else if m.isDiscovery {
+				if len(m.knownProjects) > 0 {
+					m.discoveryCursor = len(m.knownProjects) - 1
+				}
+				m.detailScroll = 0
 			} else {
 				treeRows := m.buildTreeRows()
 				if len(treeRows) > 0 {
