@@ -292,114 +292,251 @@ func (m Model) renderHeader(width int) string {
 }
 
 func (m Model) renderTestTreePane(innerW, innerH int) string {
-	visible := m.results
+	treeRows := m.buildTreeRows()
 	var b strings.Builder
 
-	b.WriteString(" " + SectionLabelStyle.Render(fmt.Sprintf("TEST TREE (%d)", len(visible))) + "\n")
+	b.WriteString(" " + SectionLabelStyle.Render(fmt.Sprintf("TEST TREE (%d)", len(m.results))) + "\n")
 
-	if len(visible) == 0 {
+	if len(treeRows) == 0 {
 		b.WriteString("\n " + MutedTextStyle.Render("Waiting for test results..."))
 	} else {
-		start := 0
-		if m.cursor >= innerH-1 {
-			start = m.cursor - (innerH - 2)
+		cursor := m.cursor
+		if cursor >= len(treeRows) {
+			cursor = len(treeRows) - 1
 		}
-		end := start + (innerH - 1)
-		if end > len(visible) {
-			end = len(visible)
+		if cursor < 0 {
+			cursor = 0
 		}
 
-		maxNameLen := innerW - 6
-		if maxNameLen < 6 {
-			maxNameLen = 6
+		availH := innerH - 1
+		start := 0
+		if cursor >= availH {
+			start = cursor - (availH - 1)
+		}
+		end := start + availH
+		if end > len(treeRows) {
+			end = len(treeRows)
 		}
 
 		for i := start; i < end; i++ {
-			r := visible[i]
-			iconRune := getStatusRune(r.Status)
-			iconColor := getStatusColor(r.Status)
-			name := truncate(r.Case.Name, maxNameLen)
+			row := treeRows[i]
+			isSelected := (i == cursor)
 
-			if i == m.cursor {
-				// Style entire line including background behind text and icon without any ANSI reset gap
-				iconPart := lipgloss.NewStyle().Background(JBSelection).Foreground(iconColor).Bold(true).Render(iconRune)
-				textPart := lipgloss.NewStyle().Background(JBSelection).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Render(name)
-				prefix := lipgloss.NewStyle().Background(JBSelection).Render("  ")
-				sep := lipgloss.NewStyle().Background(JBSelection).Render(" ")
-
-				rowContent := prefix + iconPart + sep + textPart
-				rem := innerW - lipgloss.Width(rowContent)
-				if rem > 0 {
-					rowContent += lipgloss.NewStyle().Background(JBSelection).Render(strings.Repeat(" ", rem))
+			if row.IsGroup {
+				arrow := "▼"
+				if !row.Expanded {
+					arrow = "▶"
 				}
-				b.WriteString(rowContent + "\n")
+				statusRune := getStatusRune(row.GroupStatus)
+				statusColor := getStatusColor(row.GroupStatus)
+				counterStr := fmt.Sprintf("(%d/%d)", row.PassedCount, row.TotalCount)
+
+				maxFnLen := innerW - 6 - len(counterStr) - 2
+				if maxFnLen < 4 {
+					maxFnLen = 4
+				}
+				fileName := truncate(row.File, maxFnLen)
+
+				if isSelected {
+					arrowPart := lipgloss.NewStyle().Background(JBSelection).Foreground(JBTextMuted).Render("  " + arrow + " ")
+					iconPart := lipgloss.NewStyle().Background(JBSelection).Foreground(statusColor).Bold(true).Render(statusRune + " ")
+					namePart := lipgloss.NewStyle().Background(JBSelection).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Render(fileName)
+					countPart := lipgloss.NewStyle().Background(JBSelection).Foreground(JBTextMuted).Render(" " + counterStr)
+
+					rowContent := arrowPart + iconPart + namePart + countPart
+					rem := innerW - lipgloss.Width(rowContent)
+					if rem > 0 {
+						rowContent += lipgloss.NewStyle().Background(JBSelection).Render(strings.Repeat(" ", rem))
+					}
+					b.WriteString(rowContent + "\n")
+				} else {
+					arrowPart := MutedTextStyle.Render("  " + arrow + " ")
+					iconPart := lipgloss.NewStyle().Foreground(statusColor).Bold(true).Render(statusRune + " ")
+					namePart := lipgloss.NewStyle().Foreground(JBTextPrimary).Bold(true).Render(fileName)
+					countPart := MutedTextStyle.Render(" " + counterStr)
+					b.WriteString(arrowPart + iconPart + namePart + countPart + "\n")
+				}
 			} else {
-				iconPart := lipgloss.NewStyle().Foreground(iconColor).Bold(true).Render(iconRune)
-				textPart := NormalRowStyle.Render(name)
-				b.WriteString(fmt.Sprintf("  %s %s\n", iconPart, textPart))
+				statusRune := getStatusRune(row.Result.Status)
+				statusColor := getStatusColor(row.Result.Status)
+
+				maxNameLen := innerW - 9
+				if maxNameLen < 6 {
+					maxNameLen = 6
+				}
+				testName := truncate(row.Result.Case.Name, maxNameLen)
+
+				if isSelected {
+					prefix := lipgloss.NewStyle().Background(JBSelection).Render("      ")
+					iconPart := lipgloss.NewStyle().Background(JBSelection).Foreground(statusColor).Bold(true).Render(statusRune + " ")
+					namePart := lipgloss.NewStyle().Background(JBSelection).Foreground(lipgloss.Color("#FFFFFF")).Bold(true).Render(testName)
+
+					rowContent := prefix + iconPart + namePart
+					rem := innerW - lipgloss.Width(rowContent)
+					if rem > 0 {
+						rowContent += lipgloss.NewStyle().Background(JBSelection).Render(strings.Repeat(" ", rem))
+					}
+					b.WriteString(rowContent + "\n")
+				} else {
+					iconPart := lipgloss.NewStyle().Foreground(statusColor).Bold(true).Render(statusRune + " ")
+					namePart := NormalRowStyle.Render(testName)
+					b.WriteString("      " + iconPart + namePart + "\n")
+				}
 			}
 		}
 	}
 
 	fitted := wrapAndFit(b.String(), innerW, innerH)
-	return ActivePanelStyle.Width(innerW).Height(innerH).Render(fitted)
+	panelStyle := ActivePanelStyle
+	if m.focusRight {
+		panelStyle = PanelStyle
+	}
+	return panelStyle.Width(innerW).Height(innerH).Render(fitted)
 }
 
 func (m Model) renderDetailConsolePane(innerW, innerH int) string {
-	visible := m.results
+	treeRows := m.buildTreeRows()
 	var b strings.Builder
 
-	if len(visible) == 0 || m.cursor >= len(visible) {
+	if len(treeRows) == 0 || m.cursor >= len(treeRows) {
 		b.WriteString(" " + MutedTextStyle.Render("Select a test in the tree to inspect full execution details."))
 	} else {
-		r := visible[m.cursor]
-
-		b.WriteString(" " + DetailTitleStyle.Render(fmt.Sprintf("TEST: %s", r.Case.Name)) + "\n")
-		b.WriteString(" " + MutedTextStyle.Render(fmt.Sprintf("Module: %s  |  Category: %s  |  Duration: %v  |  Status: %s",
-			r.Case.Module, r.Case.Category, r.Duration, r.Status)) + "\n\n")
-
-		if r.Case.Description != "" {
-			b.WriteString(" " + SectionLabelStyle.Render("Objective:") + "\n")
-			b.WriteString(" " + r.Case.Description + "\n\n")
-		}
-
-		if r.Input != "" {
-			b.WriteString(" " + SectionLabelStyle.Render("Inputs & Test Arguments:") + "\n")
-			b.WriteString(" " + r.Input + "\n\n")
-		}
-
-		if r.Status != model.StatusPassed && r.Status != model.StatusSkipped {
-			if r.Explanation != "" {
-				b.WriteString(" " + SectionLabelStyle.Render("Diagnosis & Reason:") + "\n")
-				b.WriteString(" " + lipgloss.NewStyle().Foreground(JBRed).Render(r.Explanation) + "\n\n")
+		row := treeRows[m.cursor]
+		if row.IsGroup {
+			titleStr := fmt.Sprintf("FILE: %s", row.File)
+			if m.focusRight {
+				b.WriteString(" " + DetailTitleStyle.Render(titleStr) + "  " + AdviceStyle.Render("[SCROLLING: ▲/▼ • LEFT to return]") + "\n")
+			} else {
+				b.WriteString(" " + DetailTitleStyle.Render(titleStr) + "  " + MutedTextStyle.Render("[RIGHT to scroll]") + "\n")
 			}
 
-			if r.Diff != "" {
-				b.WriteString(" " + SectionLabelStyle.Render("Comparison Diff (Expected vs Actual):") + "\n")
-				b.WriteString(" " + r.Diff + "\n\n")
+			cat := "General"
+			if len(row.SubResults) > 0 {
+				cat = string(row.SubResults[0].Case.Category)
+			}
+			b.WriteString(" " + MutedTextStyle.Render(fmt.Sprintf("Category: %s  |  Total Sub-Tests: %d  |  Status: %s",
+				cat, row.TotalCount, row.GroupStatus)) + "\n\n")
+
+			if row.PassedCount == row.TotalCount {
+				b.WriteString(" " + BadgePass.Render(fmt.Sprintf("✔ All %d sub-tests passed cleanly (0 leaks, 0 crashes)", row.TotalCount)) + "\n\n")
+			} else {
+				b.WriteString(" " + BadgeFail.Render(fmt.Sprintf("✖ %d of %d sub-tests failed", row.TotalCount-row.PassedCount, row.TotalCount)) + "\n\n")
 			}
 
-			if r.Advice != "" {
-				b.WriteString(" " + SectionLabelStyle.Render("Fix Recommendation:") + "\n")
-				b.WriteString(" " + AdviceStyle.Render("💡 "+r.Advice) + "\n\n")
+			b.WriteString(" " + SectionLabelStyle.Render("Sub-tests in this file:") + "\n")
+			for _, sub := range row.SubResults {
+				sRune := getStatusRune(sub.Status)
+				sColor := getStatusColor(sub.Status)
+				sIcon := lipgloss.NewStyle().Foreground(sColor).Bold(true).Render(sRune)
+				b.WriteString(fmt.Sprintf("   %s %s (%v)\n", sIcon, sub.Case.Name, sub.Duration))
+				if sub.Status != model.StatusPassed && sub.Explanation != "" {
+					b.WriteString("       " + lipgloss.NewStyle().Foreground(JBRed).Render("→ "+sub.Explanation) + "\n")
+				}
 			}
 
-			if r.LeaksReport != "" {
-				b.WriteString(" " + SectionLabelStyle.Render("Sanitizer / Memory Leak Trace:") + "\n")
-				b.WriteString(" " + r.LeaksReport + "\n\n")
-			}
-
-			if r.Trace != "" {
-				b.WriteString(" " + SectionLabelStyle.Render("Crash Stack Trace:") + "\n")
-				b.WriteString(" " + r.Trace + "\n\n")
-			}
+			b.WriteString("\n " + AdviceStyle.Render("💡 Press [Space] or [Enter] to collapse/expand • Press [Down] to inspect each sub-test in detail"))
 		} else {
-			b.WriteString(" " + BadgePass.Render("✔ Test passed cleanly with zero assertions failed and no memory leaks.") + "\n")
+			r := row.Result
+
+			titleStr := fmt.Sprintf("TEST: %s", r.Case.Name)
+			if m.focusRight {
+				b.WriteString(" " + DetailTitleStyle.Render(titleStr) + "  " + AdviceStyle.Render("[SCROLLING: ▲/▼ • LEFT to return]") + "\n")
+			} else {
+				b.WriteString(" " + DetailTitleStyle.Render(titleStr) + "  " + MutedTextStyle.Render("[RIGHT to scroll]") + "\n")
+			}
+			b.WriteString(" " + MutedTextStyle.Render(fmt.Sprintf("File: %s  |  Module: %s  |  Duration: %v  |  Status: %s",
+				row.File, r.Case.Module, r.Duration, r.Status)) + "\n\n")
+
+			// Status Badge
+			if r.Status == model.StatusPassed {
+				b.WriteString(" " + BadgePass.Render("✔ Test passed cleanly (all assertions verified, 0 leaks)") + "\n\n")
+			} else if r.Status == model.StatusFailed {
+				b.WriteString(" " + BadgeFail.Render("✖ Assertion failure detected") + "\n\n")
+			} else if r.Status == model.StatusCrash {
+				b.WriteString(" " + BadgeCrash.Render("💥 Process crashed with signal: "+r.Signal) + "\n\n")
+			} else if r.Status == model.StatusTimeout {
+				b.WriteString(" " + BadgeWarning.Render("⏱ Process timed out (infinite loop)") + "\n\n")
+			} else if r.Status == model.StatusLeak {
+				b.WriteString(" " + BadgeLeak.Render("💧 AddressSanitizer detected memory leak / corruption") + "\n\n")
+			}
+
+			if r.Case.Description != "" {
+				b.WriteString(" " + SectionLabelStyle.Render("Objective:") + "\n")
+				b.WriteString("   " + r.Case.Description + "\n\n")
+			}
+
+			if r.Input != "" {
+				b.WriteString(" " + SectionLabelStyle.Render("Inputs & Scenarios Tested:") + "\n")
+				for _, line := range strings.Split(r.Input, "\n") {
+					b.WriteString("   " + line + "\n")
+				}
+				b.WriteString("\n")
+			}
+
+			if r.Expected != "" {
+				b.WriteString(" " + SectionLabelStyle.Render("Expected Behavior / Output:") + "\n")
+				for _, line := range strings.Split(r.Expected, "\n") {
+					b.WriteString("   " + DiffExpectedStyle.Render(line) + "\n")
+				}
+				b.WriteString("\n")
+			}
+
+			if r.Actual != "" {
+				b.WriteString(" " + SectionLabelStyle.Render("Actual Output Observed:") + "\n")
+				actStyle := DiffExpectedStyle
+				if r.Status != model.StatusPassed {
+					actStyle = DiffActualStyle
+				}
+				for _, line := range strings.Split(r.Actual, "\n") {
+					b.WriteString("   " + actStyle.Render(line) + "\n")
+				}
+				b.WriteString("\n")
+			}
+
+			if r.CodeSnippet != "" {
+				b.WriteString(" " + SectionLabelStyle.Render("Reproduce at home (main.c snippet):") + "\n")
+				lines := strings.Split(strings.TrimRight(r.CodeSnippet, "\n"), "\n")
+				for _, line := range lines {
+					b.WriteString("   " + CodeSnippetStyle.Render(line) + "\n")
+				}
+				b.WriteString("\n")
+			}
+
+			if r.Status != model.StatusPassed && r.Status != model.StatusSkipped {
+				if r.Explanation != "" {
+					b.WriteString(" " + SectionLabelStyle.Render("Diagnosis & Reason:") + "\n")
+					b.WriteString("   " + lipgloss.NewStyle().Foreground(JBRed).Render(r.Explanation) + "\n\n")
+				}
+
+				if r.Diff != "" {
+					b.WriteString(" " + SectionLabelStyle.Render("Comparison Diff (Expected vs Actual):") + "\n")
+					b.WriteString(" " + r.Diff + "\n\n")
+				}
+
+				if r.Advice != "" {
+					b.WriteString(" " + SectionLabelStyle.Render("Fix Recommendation:") + "\n")
+					b.WriteString("   " + AdviceStyle.Render("💡 "+r.Advice) + "\n\n")
+				}
+
+				if r.LeaksReport != "" {
+					b.WriteString(" " + SectionLabelStyle.Render("Sanitizer / Memory Leak Trace:") + "\n")
+					b.WriteString("   " + r.LeaksReport + "\n\n")
+				}
+
+				if r.Trace != "" {
+					b.WriteString(" " + SectionLabelStyle.Render("Crash Stack Trace:") + "\n")
+					b.WriteString("   " + r.Trace + "\n\n")
+				}
+			}
 		}
 	}
 
-	fitted := wrapAndFit(b.String(), innerW, innerH)
-	return PanelStyle.Width(innerW).Height(innerH).Render(fitted)
+	fitted, _, _ := wrapAndScroll(b.String(), innerW, innerH, m.detailScroll)
+	panelStyle := PanelStyle
+	if m.focusRight {
+		panelStyle = ActivePanelStyle
+	}
+	return panelStyle.Width(innerW).Height(innerH).Render(fitted)
 }
 
 // renderBottomBar renders the full-width solid progress bar on line 1, and the info metrics on line 2.
@@ -480,6 +617,36 @@ func wrapAndFit(text string, maxW, maxH int) string {
 		lines = lines[:maxH]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// wrapAndScroll wraps text to maxW and slices the result between scrollOffset and scrollOffset+maxH.
+func wrapAndScroll(text string, maxW, maxH, scrollOffset int) (string, int, int) {
+	if maxW < 1 {
+		maxW = 1
+	}
+	wrapStyle := lipgloss.NewStyle().Width(maxW)
+	wrapped := wrapStyle.Render(text)
+	lines := strings.Split(wrapped, "\n")
+	totalLines := len(lines)
+
+	maxScroll := totalLines - maxH
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if scrollOffset > maxScroll {
+		scrollOffset = maxScroll
+	}
+	if scrollOffset < 0 {
+		scrollOffset = 0
+	}
+
+	end := scrollOffset + maxH
+	if end > totalLines {
+		end = totalLines
+	}
+	visible := lines[scrollOffset:end]
+
+	return strings.Join(visible, "\n"), scrollOffset, totalLines
 }
 
 func getStatusRune(s model.Status) string {

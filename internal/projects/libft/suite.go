@@ -139,7 +139,7 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 		return &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_harness",
-				Module:      "Build",
+				Module:      "Makefile",
 				Name:        "Test harness compilation",
 				Category:    model.CategoryBuild,
 				Description: "Compiles test harness linking against libft.a with AddressSanitizer",
@@ -153,7 +153,7 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 	return &model.TestResult{
 		Case: model.TestCase{
 			ID:          "libft_build_success",
-			Module:      "Build",
+			Module:      "Makefile",
 			Name:        "Build & Makefile verification",
 			Category:    model.CategoryBuild,
 			Description: "libft.a built cleanly with -Wall -Wextra -Werror, without relink",
@@ -259,14 +259,19 @@ func (s *Suite) RunCase(ctx context.Context, dir string, tc model.TestCase, cfg 
 
 	stdout := strings.TrimSpace(res.Stdout)
 	lines := strings.Split(stdout, "\n")
-	var expected, actual, explanation, advice string
+	var status model.Status = model.StatusFailed
+	var input, expected, actual, explanation, advice string
+	var codeLines []string
+	var inCodeBlock bool
 
 	for _, line := range lines {
 		if strings.HasPrefix(line, "STATUS: PASS") {
-			testRes.Status = model.StatusPassed
-			return testRes, nil
-		}
-		if strings.HasPrefix(line, "EXPECTED: ") {
+			status = model.StatusPassed
+		} else if strings.HasPrefix(line, "STATUS: FAIL") {
+			status = model.StatusFailed
+		} else if strings.HasPrefix(line, "INPUT: ") {
+			input = strings.TrimPrefix(line, "INPUT: ")
+		} else if strings.HasPrefix(line, "EXPECTED: ") {
 			expected = strings.TrimPrefix(line, "EXPECTED: ")
 		} else if strings.HasPrefix(line, "ACTUAL: ") {
 			actual = strings.TrimPrefix(line, "ACTUAL: ")
@@ -274,15 +279,25 @@ func (s *Suite) RunCase(ctx context.Context, dir string, tc model.TestCase, cfg 
 			explanation = strings.TrimPrefix(line, "EXPLANATION: ")
 		} else if strings.HasPrefix(line, "ADVICE: ") {
 			advice = strings.TrimPrefix(line, "ADVICE: ")
+		} else if strings.HasPrefix(line, "CODE_START") {
+			inCodeBlock = true
+		} else if strings.HasPrefix(line, "CODE_END") {
+			inCodeBlock = false
+		} else if inCodeBlock {
+			codeLines = append(codeLines, line)
 		}
 	}
 
-	testRes.Status = model.StatusFailed
+	testRes.Status = status
+	testRes.Input = input
 	testRes.Expected = expected
 	testRes.Actual = actual
+	testRes.CodeSnippet = strings.Join(codeLines, "\n")
 	testRes.Explanation = explanation
 	testRes.Advice = advice
-	testRes.Diff = diff.Compare(expected, actual)
+	if status != model.StatusPassed && expected != "" && actual != "" {
+		testRes.Diff = diff.Compare(expected, actual)
+	}
 
 	return testRes, nil
 }

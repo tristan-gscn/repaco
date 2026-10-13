@@ -46,6 +46,11 @@ type Model struct {
 	knownProjects   []model.ProjectMetadata
 	discoveryCursor int
 	targetDir       string
+
+	// Detail pane focus and scrolling
+	focusRight      bool
+	detailScroll    int
+	collapsedGroups map[string]bool
 }
 
 func NewModel(ctx context.Context, eng *engine.Engine) Model {
@@ -69,15 +74,16 @@ func NewModel(ctx context.Context, eng *engine.Engine) Model {
 	}()
 
 	return Model{
-		ctx:           ctx,
-		eng:           eng,
-		eventsChan:    ch,
-		running:       true,
-		statusMsg:     "Scanning directory for 42 project...",
-		spinner:       s,
-		startTime:     time.Now(),
-		knownProjects: known,
-		targetDir:     cwd,
+		ctx:             ctx,
+		eng:             eng,
+		eventsChan:      ch,
+		running:         true,
+		statusMsg:       "Scanning directory for 42 project...",
+		spinner:         s,
+		startTime:       time.Now(),
+		knownProjects:   known,
+		targetDir:       cwd,
+		collapsedGroups: make(map[string]bool),
 	}
 }
 
@@ -168,16 +174,76 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc", "ctrl+c", "q":
+		case "ctrl+c", "q":
 			return m, tea.Quit
 
-		case "enter":
+		case "esc":
+			if m.focusRight {
+				m.focusRight = false
+				return m, nil
+			}
+			return m, tea.Quit
+
+		case "right":
+			if !m.isNearbyMode && !m.isDiscovery && len(m.results) > 0 {
+				treeRows := m.buildTreeRows()
+				if m.cursor >= 0 && m.cursor < len(treeRows) {
+					row := treeRows[m.cursor]
+					if row.IsGroup && !row.Expanded {
+						if m.collapsedGroups == nil {
+							m.collapsedGroups = make(map[string]bool)
+						}
+						m.collapsedGroups[row.File] = false
+						return m, nil
+					}
+				}
+				m.focusRight = true
+				return m, nil
+			}
+
+		case "left":
+			if m.focusRight {
+				m.focusRight = false
+				return m, nil
+			}
+			if !m.isNearbyMode && !m.isDiscovery && len(m.results) > 0 {
+				treeRows := m.buildTreeRows()
+				if m.cursor >= 0 && m.cursor < len(treeRows) {
+					row := treeRows[m.cursor]
+					if row.IsGroup && row.Expanded {
+						if m.collapsedGroups == nil {
+							m.collapsedGroups = make(map[string]bool)
+						}
+						m.collapsedGroups[row.File] = true
+						return m, nil
+					} else if !row.IsGroup {
+						for i := m.cursor - 1; i >= 0; i-- {
+							if treeRows[i].IsGroup && treeRows[i].File == row.File {
+								m.cursor = i
+								m.detailScroll = 0
+								break
+							}
+						}
+						return m, nil
+					}
+				}
+			}
+
+		case "tab":
+			if !m.isNearbyMode && !m.isDiscovery && len(m.results) > 0 {
+				m.focusRight = !m.focusRight
+				return m, nil
+			}
+
+		case "enter", " ":
 			if m.isNearbyMode && len(m.nearbyProjects) > 0 {
 				selected := m.nearbyProjects[m.nearbyCursor]
 				m.isNearbyMode = false
 				m.running = true
 				m.results = nil
 				m.cursor = 0
+				m.detailScroll = 0
+				m.focusRight = false
 				m.stats = model.SummaryStats{}
 				m.startTime = time.Now()
 				m.statusMsg = "Testing " + selected.Detection.Project.Name + "..."
@@ -190,6 +256,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}()
 
 				return m, waitForEvent(newCh)
+			}
+			if !m.isNearbyMode && !m.isDiscovery && len(m.results) > 0 {
+				treeRows := m.buildTreeRows()
+				if m.cursor >= 0 && m.cursor < len(treeRows) {
+					row := treeRows[m.cursor]
+					if row.IsGroup {
+						if m.collapsedGroups == nil {
+							m.collapsedGroups = make(map[string]bool)
+						}
+						m.collapsedGroups[row.File] = !m.collapsedGroups[row.File]
+						newRows := m.buildTreeRows()
+						if m.cursor >= len(newRows) {
+							m.cursor = len(newRows) - 1
+							if m.cursor < 0 {
+								m.cursor = 0
+							}
+						}
+						return m, nil
+					} else {
+						m.focusRight = true
+						return m, nil
+					}
+				}
 			}
 
 		case "up":
@@ -205,8 +294,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
+			if m.focusRight {
+				if m.detailScroll > 0 {
+					m.detailScroll--
+				}
+				return m, nil
+			}
 			if m.cursor > 0 {
 				m.cursor--
+				m.detailScroll = 0
 			}
 
 		case "down":
@@ -222,9 +318,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			visible := m.results
-			if m.cursor < len(visible)-1 {
+			if m.focusRight {
+				m.detailScroll++
+				return m, nil
+			}
+			treeRows := m.buildTreeRows()
+			if m.cursor < len(treeRows)-1 {
 				m.cursor++
+				m.detailScroll = 0
+			}
+
+		case "pgup", "pageup":
+			if m.focusRight {
+				m.detailScroll -= 6
+				if m.detailScroll < 0 {
+					m.detailScroll = 0
+				}
+			} else {
+				m.cursor -= 10
+				if m.cursor < 0 {
+					m.cursor = 0
+				}
+				m.detailScroll = 0
+			}
+
+		case "pgdown", "pagedown":
+			if m.focusRight {
+				m.detailScroll += 6
+			} else {
+				treeRows := m.buildTreeRows()
+				m.cursor += 10
+				if m.cursor >= len(treeRows) {
+					m.cursor = len(treeRows) - 1
+					if m.cursor < 0 {
+						m.cursor = 0
+					}
+				}
+				m.detailScroll = 0
+			}
+
+		case "home":
+			if m.focusRight {
+				m.detailScroll = 0
+			} else {
+				m.cursor = 0
+				m.detailScroll = 0
+			}
+
+		case "end":
+			if m.focusRight {
+				m.detailScroll = 9999
+			} else {
+				treeRows := m.buildTreeRows()
+				if len(treeRows) > 0 {
+					m.cursor = len(treeRows) - 1
+				}
+				m.detailScroll = 0
 			}
 		}
 	}

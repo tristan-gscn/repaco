@@ -91,6 +91,11 @@ var (
 			Foreground(JBGreen).
 			Bold(true)
 
+	CodeSnippetStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#C8D3F5")).
+			Background(lipgloss.Color("#222436")).
+			Padding(0, 1)
+
 	// Footer Styles
 	FooterBarStyle = lipgloss.NewStyle().
 			Background(JBHeaderBg).

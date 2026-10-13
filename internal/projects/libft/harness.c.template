@@ -15,6 +15,9 @@ typedef struct s_test_entry {
 	const char *name;
 	const char *category;
 	const char *desc;
+	const char *input;
+	const char *expected;
+	const char *code;
 	int (*fn)(char *exp, char *act, char *expl, char *adv);
 } t_test_entry;
 
@@ -1168,53 +1171,282 @@ static int test_lstmap(char *exp, char *act, char *expl, char *adv) {
 /* ========================================================================= */
 
 static const t_test_entry g_tests[] = {
-	{"libft_isalpha_alpha", "ft_isalpha", "Alphabetical character ranges", "MANDATORY", "Tests lowercase a-z and uppercase A-Z return non-zero", test_isalpha_alpha},
-	{"libft_isalpha_nonalpha", "ft_isalpha", "Non-alpha characters and boundaries", "MANDATORY", "Tests digits, symbols, EOF return 0", test_isalpha_nonalpha},
-	{"libft_isdigit_digits", "ft_isdigit", "Decimal digits '0'-'9'", "MANDATORY", "Tests digits 0-9 return non-zero", test_isdigit_digits},
-	{"libft_isdigit_nondigits", "ft_isdigit", "Non-digit characters", "MANDATORY", "Tests characters outside '0'-'9' return 0", test_isdigit_nondigits},
-	{"libft_isalnum_valid", "ft_isalnum", "Alphanumeric characters", "MANDATORY", "Tests letters and numbers return non-zero", test_isalnum_valid},
-	{"libft_isalnum_invalid", "ft_isalnum", "Punctuation and whitespace", "MANDATORY", "Tests symbols and whitespace return 0", test_isalnum_invalid},
-	{"libft_isascii", "ft_isascii", "ASCII 7-bit boundaries [0, 127]", "MANDATORY", "Tests valid ASCII range 0-127 and out of bounds", test_isascii},
-	{"libft_isprint", "ft_isprint", "Printable ASCII range [32, 126]", "MANDATORY", "Tests printable chars and control codes return 0", test_isprint},
-	{"libft_toupper", "ft_toupper", "Lowercase to uppercase conversion", "MANDATORY", "Tests 'a'-'z' to 'A'-'Z' and non-alpha untouched", test_toupper},
-	{"libft_tolower", "ft_tolower", "Uppercase to lowercase conversion", "MANDATORY", "Tests 'A'-'Z' to 'a'-'z' and non-alpha untouched", test_tolower},
-	{"libft_strlen", "ft_strlen", "String length calculation", "MANDATORY", "Tests empty string and regular strings", test_strlen},
-	{"libft_memset", "ft_memset", "Memory byte fill and casting", "MANDATORY", "Tests filling memory buffer and unsigned char casting for c > 255", test_memset},
-	{"libft_bzero", "ft_bzero", "Zero out memory buffer", "MANDATORY", "Tests zeroing byte range without affecting surrounding bytes", test_bzero},
-	{"libft_memcpy", "ft_memcpy", "Memory copy without overlap", "MANDATORY", "Tests copying memory buffer and return value", test_memcpy},
-	{"libft_memmove_overlap", "ft_memmove", "Overlapping memory safety", "MANDATORY", "Tests forward and backward overlapping copies without memory corruption", test_memmove_overlap},
-	{"libft_strlcpy", "ft_strlcpy", "Bounded string copy and null termination", "MANDATORY", "Tests truncation, buffer size 0, and return value", test_strlcpy},
-	{"libft_strlcat", "ft_strlcat", "Bounded string concatenation", "MANDATORY", "Tests concatenation, size <= dst_len, and null termination", test_strlcat},
-	{"libft_strchr", "ft_strchr", "Locate first character or null terminator", "MANDATORY", "Tests finding char, absent char, and '\\0' search", test_strchr},
-	{"libft_strrchr", "ft_strrchr", "Locate last character occurrence", "MANDATORY", "Tests finding last occurrence and '\\0' search", test_strrchr},
-	{"libft_strncmp", "ft_strncmp", "Bounded string compare and unsigned cast", "MANDATORY", "Tests exact match, length n bound, and unsigned char cast (\\200 vs \\0)", test_strncmp},
-	{"libft_memchr", "ft_memchr", "Scan raw memory byte buffer", "MANDATORY", "Tests finding byte and scanning through binary '\\0'", test_memchr},
-	{"libft_memcmp", "ft_memcmp", "Binary memory comparison", "MANDATORY", "Tests byte buffer equality and unsigned comparison", test_memcmp},
-	{"libft_strnstr", "ft_strnstr", "Locate substring within length limit", "MANDATORY", "Tests empty needle, substring within len, and boundary limits", test_strnstr},
-	{"libft_atoi", "ft_atoi", "String to integer conversion and edge cases", "MANDATORY", "Tests whitespace, +/- signs, INT_MIN, and INT_MAX", test_atoi},
-	{"libft_calloc", "ft_calloc", "Zero-initialized allocation and overflow protection", "MANDATORY", "Tests zero initialization, 0 count, and multiplication overflow check", test_calloc},
-	{"libft_strdup", "ft_strdup", "Duplicate string to heap", "MANDATORY", "Tests distinct allocated duplicate and empty string", test_strdup},
-	{"libft_substr", "ft_substr", "Extract substring and edge conditions", "MANDATORY", "Tests normal extraction, start >= len, and len > remaining string", test_substr},
-	{"libft_strjoin", "ft_strjoin", "Concatenate two strings into new heap string", "MANDATORY", "Tests joining strings and empty string inputs", test_strjoin},
-	{"libft_strtrim", "ft_strtrim", "Trim set characters from both ends", "MANDATORY", "Tests trimming set characters, empty strings, and full trims", test_strtrim},
-	{"libft_split", "ft_split", "Split string by delimiter into array", "MANDATORY", "Tests multiple consecutive delimiters, empty strings, and array structure", test_split},
-	{"libft_itoa", "ft_itoa", "Integer to ASCII conversion and INT_MIN", "MANDATORY", "Tests 0, positive, negative, and INT_MIN (-2147483648)", test_itoa},
-	{"libft_strmapi", "ft_strmapi", "Apply indexed mapping function to string", "MANDATORY", "Tests function application with index parameter", test_strmapi},
-	{"libft_striteri", "ft_striteri", "Apply indexed in-place iterator to string", "MANDATORY", "Tests in-place modification with index parameter", test_striteri},
-	{"libft_putchar_fd", "ft_putchar_fd", "Character output to file descriptor", "MANDATORY", "Tests writing char to pipe fd", test_putchar_fd},
-	{"libft_putstr_fd", "ft_putstr_fd", "String output to file descriptor", "MANDATORY", "Tests writing string to pipe fd", test_putstr_fd},
-	{"libft_putendl_fd", "ft_putendl_fd", "String output with newline to fd", "MANDATORY", "Tests writing string followed by newline to pipe fd", test_putendl_fd},
-	{"libft_putnbr_fd", "ft_putnbr_fd", "Integer output to file descriptor", "MANDATORY", "Tests 0, positive, negative, and INT_MIN to pipe fd", test_putnbr_fd},
+	{"libft_isalpha_alpha", "ft_isalpha", "Alphabetical character ranges", "MANDATORY", "Tests lowercase a-z and uppercase A-Z return non-zero",
+		"'a'..'z' and 'A'..'Z'",
+		"Non-zero for all alphabetical characters",
+		"int r1 = ft_isalpha('a'); // returns non-zero\nint r2 = ft_isalpha('Z'); // returns non-zero\nprintf(\"r1: %d, r2: %d\\n\", r1 != 0, r2 != 0);",
+		test_isalpha_alpha},
+
+	{"libft_isalpha_nonalpha", "ft_isalpha", "Non-alpha characters and boundaries", "MANDATORY", "Tests digits, symbols, EOF return 0",
+		"'0', '9', '@', '[', '`', '{', ' ', '\\t', '\\0', 127, 200",
+		"0 for all non-alphabetical characters",
+		"int r = ft_isalpha('4');\nprintf(\"ft_isalpha('4') == %d\\n\", r); // 0",
+		test_isalpha_nonalpha},
+
+	{"libft_isdigit_digits", "ft_isdigit", "Decimal digits '0'-'9'", "MANDATORY", "Tests digits 0-9 return non-zero",
+		"'0'..'9'",
+		"Non-zero for all digits",
+		"printf(\"isdigit('0'): %d\\n\", ft_isdigit('0') != 0);\nprintf(\"isdigit('9'): %d\\n\", ft_isdigit('9') != 0);",
+		test_isdigit_digits},
+
+	{"libft_isdigit_nondigits", "ft_isdigit", "Non-digit characters", "MANDATORY", "Tests characters outside '0'-'9' return 0",
+		"'/', ':', 'a', 'Z', ' ', -1, 128",
+		"0 for all characters outside '0'-'9'",
+		"printf(\"isdigit('/'): %d\\n\", ft_isdigit('/'));\nprintf(\"isdigit(':'): %d\\n\", ft_isdigit(':'));",
+		test_isdigit_nondigits},
+
+	{"libft_isalnum_valid", "ft_isalnum", "Alphanumeric characters", "MANDATORY", "Tests letters and numbers return non-zero",
+		"'a', 'Z', '9', '0', 'm'",
+		"Non-zero for letters and numbers",
+		"printf(\"isalnum('a'): %d\\n\", ft_isalnum('a') != 0);\nprintf(\"isalnum('9'): %d\\n\", ft_isalnum('9') != 0);",
+		test_isalnum_valid},
+
+	{"libft_isalnum_invalid", "ft_isalnum", "Punctuation and whitespace", "MANDATORY", "Tests symbols and whitespace return 0",
+		"'!', '@', '#', ' ', '\\t'",
+		"0 for punctuation and whitespace",
+		"printf(\"isalnum('!'): %d\\n\", ft_isalnum('!'));\nprintf(\"isalnum(' '): %d\\n\", ft_isalnum(' '));",
+		test_isalnum_invalid},
+
+	{"libft_isascii", "ft_isascii", "ASCII 7-bit boundaries [0, 127]", "MANDATORY", "Tests valid ASCII range 0-127 and out of bounds",
+		"0..127 ; out of range: -1, 128, 255, 1000",
+		"Non-zero for [0, 127], 0 otherwise",
+		"printf(\"isascii(42): %d\\n\", ft_isascii(42) != 0);\nprintf(\"isascii(128): %d\\n\", ft_isascii(128));",
+		test_isascii},
+
+	{"libft_isprint", "ft_isprint", "Printable ASCII range [32, 126]", "MANDATORY", "Tests printable chars and control codes return 0",
+		"32..126 ; non-printable: 0, 10, 13, 31, 127, 200",
+		"Non-zero for [32, 126], 0 otherwise",
+		"printf(\"isprint(' '): %d\\n\", ft_isprint(' ') != 0);\nprintf(\"isprint('\\\\n'): %d\\n\", ft_isprint('\\n'));",
+		test_isprint},
+
+	{"libft_toupper", "ft_toupper", "Lowercase to uppercase conversion", "MANDATORY", "Tests 'a'-'z' to 'A'-'Z' and non-alpha untouched",
+		"'a'..'z', 'A'..'Z', '0', '!', 128",
+		"c - 32 for 'a'..'z', c untouched for others",
+		"printf(\"toupper('a'): '%c'\\n\", ft_toupper('a')); // 'A'\nprintf(\"toupper('A'): '%c'\\n\", ft_toupper('A')); // 'A'\nprintf(\"toupper('4'): '%c'\\n\", ft_toupper('4')); // '4'",
+		test_toupper},
+
+	{"libft_tolower", "ft_tolower", "Uppercase to lowercase conversion", "MANDATORY", "Tests 'A'-'Z' to 'a'-'z' and non-alpha untouched",
+		"'A'..'Z', 'a'..'z', '0', '!', 128",
+		"c + 32 for 'A'..'Z', c untouched for others",
+		"printf(\"tolower('Z'): '%c'\\n\", ft_tolower('Z')); // 'z'\nprintf(\"tolower('z'): '%c'\\n\", ft_tolower('z')); // 'z'",
+		test_tolower},
+
+	{"libft_strlen", "ft_strlen", "String length calculation", "MANDATORY", "Tests empty string and regular strings",
+		"\"\" and \"42 Born To Code\"",
+		"0 and 15",
+		"printf(\"strlen(\\\"\\\"): %zu\\n\", ft_strlen(\"\"));\nprintf(\"strlen(\\\"42 Born To Code\\\"): %zu\\n\", ft_strlen(\"42 Born To Code\"));",
+		test_strlen},
+
+	{"libft_memset", "ft_memset", "Memory byte fill and casting", "MANDATORY", "Tests filling memory buffer and unsigned char casting for c > 255",
+		"buf[32], fill 10 bytes with 'X', and c = 0x142",
+		"10 bytes set to 'X', 0x142 cast to (unsigned char) 0x42 ('B')",
+		"char buf[32];\nft_memset(buf, 'X', 10);\n// Returns dest pointer and sets first 10 bytes to 'X'",
+		test_memset},
+
+	{"libft_bzero", "ft_bzero", "Zero out memory buffer", "MANDATORY", "Tests zeroing byte range and n == 0",
+		"buf = \"1234567890abcdef\", ft_bzero(buf + 4, 8), and ft_bzero(buf, 0)",
+		"8 bytes zeroed at offset 4, buffer unchanged when n == 0",
+		"char buf[32] = \"1234567890abcdef\";\nft_bzero(buf + 4, 8);\n// buf contains \"1234\\0\\0\\0\\0\\0\\0\\0\\0cdef\"\nft_bzero(buf, 0); // must leave buffer unchanged",
+		test_bzero},
+
+	{"libft_memcpy", "ft_memcpy", "Memory copy without overlap", "MANDATORY", "Tests copying memory buffer and return value",
+		"dst[64], src = \"Copy this string completely!\", n = strlen(src) + 1",
+		"dst matches src, returns dest pointer",
+		"char src[] = \"Copy this string completely!\";\nchar dst[64] = {0};\nvoid *ret = ft_memcpy(dst, src, strlen(src) + 1);\nprintf(\"ret == dst: %d, dst: '%s'\\n\", ret == dst, dst);",
+		test_memcpy},
+
+	{"libft_memmove_overlap", "ft_memmove", "Overlapping memory safety", "MANDATORY", "Tests forward and backward overlapping copies without memory corruption",
+		"str1 + 2 <- str1 (dest > src) ; str3 <- str3 + 2 (dest < src)",
+		"Forward copy: \"121234589\" ; Backward copy: \"cdefg...\"",
+		"char str[32] = \"123456789\";\nft_memmove(str + 2, str, 5);\nprintf(\"overlap: '%s'\\n\", str); // \"121234589\"",
+		test_memmove_overlap},
+
+	{"libft_strlcpy", "ft_strlcpy", "Bounded string copy and null termination", "MANDATORY", "Tests truncation, buffer size 0, and return value",
+		"dst[16], src = \"HelloWorld\", size = 16 ; size = 5 ; size = 0",
+		"Returns 10 ; with size 5 dst becomes 'Hell\\0' ; with size 0 dst untouched",
+		"char dst[16];\nsize_t r = ft_strlcpy(dst, \"HelloWorld\", 5);\nprintf(\"r: %zu, dst: '%s'\\n\", r, dst); // r: 10, dst: 'Hell'",
+		test_strlcpy},
+
+	{"libft_strlcat", "ft_strlcat", "Bounded string concatenation", "MANDATORY", "Tests concatenation, size <= dst_len, and null termination",
+		"dst = \"Hello\", src = \" World\", size = 32 ; size = 4 (size <= dst_len)",
+		"size 32 returns 11, dst \"Hello World\" ; size 4 returns 10, dst untouched",
+		"char dst[32] = \"Hello\";\nsize_t r = ft_strlcat(dst, \" World\", sizeof(dst));\nprintf(\"r: %zu, dst: '%s'\\n\", r, dst); // r: 11, dst: 'Hello World'\n// Edge case size <= dst_len:\nchar dst2[32] = \"Bonjour\";\nr = ft_strlcat(dst2, \" Monde\", 4);\nprintf(\"r: %zu, dst2: '%s'\\n\", r, dst2); // r: 10, dst2: 'Bonjour'",
+		test_strlcat},
+
+	{"libft_strchr", "ft_strchr", "Locate first character or null terminator", "MANDATORY", "Tests finding char, absent char, and '\\0' search",
+		"s = \"tripouille\", search 'p', search '\\0', search 'z'",
+		"Pointer to 'pouille', pointer to trailing '\\0', NULL for 'z'",
+		"char *p = ft_strchr(\"tripouille\", 'p');\nprintf(\"found: '%s'\\n\", p); // 'pouille'\nchar *null_byte = ft_strchr(\"tripouille\", '\\0');\nprintf(\"null byte found: %d\\n\", null_byte != NULL);",
+		test_strchr},
+
+	{"libft_strrchr", "ft_strrchr", "Locate last character occurrence", "MANDATORY", "Tests finding last occurrence and '\\0' search",
+		"s = \"tripouille\", search 'i', search '\\0'",
+		"Pointer to LAST occurrence ('ille'), pointer to '\\0'",
+		"char *p = ft_strrchr(\"tripouille\", 'i');\nprintf(\"last 'i': '%s'\\n\", p); // 'ille'",
+		test_strrchr},
+
+	{"libft_strncmp", "ft_strncmp", "Bounded string compare and unsigned cast", "MANDATORY", "Tests exact match, length n bound, and unsigned char cast (\\200 vs \\0)",
+		"\"123\" vs \"123\" (n=5) ; \"1234\" vs \"1235\" (n=3) ; \"\\200\" vs \"\\0\" (n=1)",
+		"0, 0, positive (>0) due to unsigned char casting",
+		"int r1 = ft_strncmp(\"1234\", \"1235\", 3); // 0 (diff after n=3)\nint r2 = ft_strncmp(\"\\200\", \"\\0\", 1);  // > 0 (unsigned cast: 128 - 0)\nprintf(\"r1: %d, r2 > 0: %d\\n\", r1, r2 > 0);",
+		test_strncmp},
+
+	{"libft_memchr", "ft_memchr", "Scan raw memory byte buffer", "MANDATORY", "Tests finding byte and scanning through binary '\\0'",
+		"raw buffer \"abcdef\\0gh\", search '\\0', n = 8",
+		"Pointer to '\\0' at index 6",
+		"char buf[] = \"abcdef\\0gh\";\nvoid *res = ft_memchr(buf, '\\0', 8);\nprintf(\"found at offset: %ld\\n\", (char*)res - buf); // 6",
+		test_memchr},
+
+	{"libft_memcmp", "ft_memcmp", "Binary memory comparison", "MANDATORY", "Tests byte buffer equality and unsigned comparison",
+		"\"\\200\" vs \"\\0\" with n = 1",
+		"Positive value (> 0)",
+		"int r = ft_memcmp(\"\\200\", \"\\0\", 1);\nprintf(\"r > 0: %d\\n\", r > 0); // must be > 0 (cast to unsigned char)",
+		test_memcmp},
+
+	{"libft_strnstr", "ft_strnstr", "Locate substring within length limit", "MANDATORY", "Tests empty needle, substring within len, and boundary limits",
+		"big = \"Bar Baz Foo Bar\", needle = \"Foo\", len = 12 ; needle = \"\" ; len = 9",
+		"Pointer to 'Foo Bar', pointer to big, NULL when beyond len",
+		"const char *big = \"Bar Baz Foo Bar\";\nprintf(\"empty: %p == %p\\n\", ft_strnstr(big, \"\", 10), big);\nprintf(\"found: %s\\n\", ft_strnstr(big, \"Foo\", 12)); // \"Foo Bar\"\nprintf(\"beyond len 9: %p\\n\", (void*)ft_strnstr(big, \"Foo\", 9)); // NULL",
+		test_strnstr},
+
+	{"libft_atoi", "ft_atoi", "String to integer conversion and edge cases", "MANDATORY", "Tests whitespace, +/- signs, INT_MIN, and INT_MAX",
+		"\"   \\t\\n 1234\", \"+42\", \"-42\", \"--42\", \"2147483647\", \"-2147483648\"",
+		"1234, 42, -42, 0, 2147483647, -2147483648",
+		"printf(\"space: %d\\n\", ft_atoi(\"   \\t\\n 1234\")); // 1234\nprintf(\"minus: %d\\n\", ft_atoi(\"-42\"));            // -42\nprintf(\"double: %d\\n\", ft_atoi(\"--42\"));          // 0\nprintf(\"int_min: %d\\n\", ft_atoi(\"-2147483648\"));  // -2147483648",
+		test_atoi},
+
+	{"libft_calloc", "ft_calloc", "Zero-initialized allocation and overflow protection", "MANDATORY", "Tests zero initialization, 0 count, and multiplication overflow check",
+		"nmemb = 10, size = 1 ; nmemb = 0, size = 10 ; nmemb = SIZE_MAX, size = 2",
+		"10 zero-initialized bytes ; valid freeable pointer ; NULL on overflow",
+		"char *p = ft_calloc(10, 1);\n// p contains 10 zeroes, p[0..9] == 0\nfree(p);\nvoid *ovf = ft_calloc(SIZE_MAX, 2); // must return NULL on overflow\nprintf(\"ovf == NULL: %d\\n\", ovf == NULL);",
+		test_calloc},
+
+	{"libft_strdup", "ft_strdup", "Duplicate string to heap", "MANDATORY", "Tests distinct allocated duplicate and empty string",
+		"\"Duplicate this string!\" and \"\"",
+		"Distinct allocated string with identical content",
+		"char *s = ft_strdup(\"Hello 42\");\nprintf(\"dup: '%s', distinct ptr: %d\\n\", s, s != \"Hello 42\");\nfree(s);",
+		test_strdup},
+
+	{"libft_substr", "ft_substr", "Extract substring and edge conditions", "MANDATORY", "Tests normal extraction, start >= len, and len > remaining string",
+		"s = \"tripouille\" (0, 5) ; s = \"hello\" (start=10, len=5) ; s = \"hello\" (start=2, len=500)",
+		"\"tripo\" ; allocated \"\" ; allocated \"llo\"",
+		"char *s1 = ft_substr(\"tripouille\", 0, 5); // \"tripo\"\nchar *s2 = ft_substr(\"hello\", 10, 5);      // \"\" (allocated, NOT NULL)\nchar *s3 = ft_substr(\"hello\", 2, 500);    // \"llo\"\nprintf(\"'%s', '%s', '%s'\\n\", s1, s2, s3);",
+		test_substr},
+
+	{"libft_strjoin", "ft_strjoin", "Concatenate two strings into new heap string", "MANDATORY", "Tests joining strings and empty string inputs",
+		"\"Hello\" + \" 42!\" ; \"\" + \"\"",
+		"\"Hello 42!\" ; \"\"",
+		"char *j = ft_strjoin(\"Hello\", \" 42!\");\nprintf(\"joined: '%s'\\n\", j); // \"Hello 42!\"\nfree(j);",
+		test_strjoin},
+
+	{"libft_strtrim", "ft_strtrim", "Trim set characters from both ends", "MANDATORY", "Tests trimming set characters, empty strings, and full trims",
+		"\"  \\t  hello world  \\t \", set = \" \\t\" ; \"xxxxxxx\", set = \"x\"",
+		"\"hello world\" ; \"\"",
+		"char *t1 = ft_strtrim(\"  hello world  \", \" \"); // \"hello world\"\nchar *t2 = ft_strtrim(\"xxxxxxx\", \"x\");        // \"\"\nprintf(\"'%s', '%s'\\n\", t1, t2);",
+		test_strtrim},
+
+	{"libft_split", "ft_split", "Split string by delimiter into array", "MANDATORY", "Tests multiple consecutive delimiters, empty strings, and array structure",
+		"\"   hello   world   42  \" with ' ' ; \"     \" with ' '",
+		"['hello', 'world', '42', NULL] ; [NULL]",
+		"char **tab = ft_split(\"   hello   world   42  \", ' ');\nfor (int i = 0; tab[i]; i++) printf(\"tab[%d]: '%s'\\n\", i, tab[i]);\n// Edge case only delimiters:\nchar **tab2 = ft_split(\"     \", ' ');\nprintf(\"tab2[0] == NULL: %d\\n\", tab2[0] == NULL);",
+		test_split},
+
+	{"libft_itoa", "ft_itoa", "Integer to ASCII conversion and INT_MIN", "MANDATORY", "Tests 0, positive, negative, and INT_MIN (-2147483648)",
+		"0, 42, -42, 2147483647, -2147483648",
+		"\"0\", \"42\", \"-42\", \"2147483647\", \"-2147483648\"",
+		"char *s = ft_itoa(-2147483648);\nprintf(\"INT_MIN: '%s'\\n\", s); // \"-2147483648\"\nfree(s);",
+		test_itoa},
+
+	{"libft_strmapi", "ft_strmapi", "Apply indexed mapping function to string", "MANDATORY", "Tests function application with index parameter",
+		"\"abc\" with map_rot1 (c + 1) ; \"aaa\" with map_index (c + i)",
+		"\"bcd\" ; \"abc\"",
+		"char rot1(unsigned int i, char c) { (void)i; return c + 1; }\nchar *res = ft_strmapi(\"abc\", rot1);\nprintf(\"res: '%s'\\n\", res); // \"bcd\"\nfree(res);",
+		test_strmapi},
+
+	{"libft_striteri", "ft_striteri", "Apply indexed in-place iterator to string", "MANDATORY", "Tests in-place modification with index parameter",
+		"str = \"abc\" with iter_rot1 (*c = *c + 1)",
+		"In-place modified: str becomes \"bcd\"",
+		"void rot1(unsigned int i, char *c) { (void)i; *c = *c + 1; }\nchar str[] = \"abc\";\nft_striteri(str, rot1);\nprintf(\"str: '%s'\\n\", str); // \"bcd\"",
+		test_striteri},
+
+	{"libft_putchar_fd", "ft_putchar_fd", "Character output to file descriptor", "MANDATORY", "Tests writing char to pipe fd",
+		"'Z' to pipe write fd",
+		"1 byte read matching 'Z'",
+		"ft_putchar_fd('Z', 1); // prints 'Z' on stdout (fd 1)",
+		test_putchar_fd},
+
+	{"libft_putstr_fd", "ft_putstr_fd", "String output to file descriptor", "MANDATORY", "Tests writing string to pipe fd",
+		"\"42 Lausanne\" to pipe write fd",
+		"11 bytes read matching \"42 Lausanne\"",
+		"ft_putstr_fd(\"42 Lausanne\", 1); // prints string on stdout",
+		test_putstr_fd},
+
+	{"libft_putendl_fd", "ft_putendl_fd", "String output with newline to fd", "MANDATORY", "Tests writing string followed by newline to pipe fd",
+		"\"Line 1\" to pipe write fd",
+		"7 bytes read matching \"Line 1\\n\"",
+		"ft_putendl_fd(\"Line 1\", 1); // prints string with newline on stdout",
+		test_putendl_fd},
+
+	{"libft_putnbr_fd", "ft_putnbr_fd", "Integer output to file descriptor", "MANDATORY", "Tests 0, positive, negative, and INT_MIN to pipe fd",
+		"0, 42, -42, 2147483647, -2147483648",
+		"\"0\", \"42\", \"-42\", \"2147483647\", \"-2147483648\"",
+		"ft_putnbr_fd(-2147483648, 1); // prints \"-2147483648\" on stdout",
+		test_putnbr_fd},
+
 #ifdef HAS_BONUS
-	{"libft_lstnew", "ft_lstnew", "Create new list element", "BONUS", "Tests initialization of content and NULL next pointer", test_lstnew},
-	{"libft_lstadd_front", "ft_lstadd_front", "Prepend node to list head", "BONUS", "Tests adding to empty list and existing list", test_lstadd_front},
-	{"libft_lstsize", "ft_lstsize", "Count number of elements in list", "BONUS", "Tests empty list (0) and multi-node count", test_lstsize},
-	{"libft_lstlast", "ft_lstlast", "Locate last element in list", "BONUS", "Tests empty list (NULL) and tail node retrieval", test_lstlast},
-	{"libft_lstadd_back", "ft_lstadd_back", "Append node to list tail", "BONUS", "Tests adding to empty list and existing list", test_lstadd_back},
-	{"libft_lstdelone", "ft_lstdelone", "Delete single list node using del", "BONUS", "Tests del called on content and node freed", test_lstdelone},
-	{"libft_lstclear", "ft_lstclear", "Delete entire list and set head to NULL", "BONUS", "Tests clearing list, invoking del, and setting *lst = NULL", test_lstclear},
-	{"libft_lstiter", "ft_lstiter", "Iterate over list applying function f", "BONUS", "Tests applying function f to all nodes in order", test_lstiter},
-	{"libft_lstmap", "ft_lstmap", "Map function over list into new list", "BONUS", "Tests cloning and transforming list into new list", test_lstmap},
+	{"libft_lstnew", "ft_lstnew", "Create new list element", "BONUS", "Tests initialization of content and NULL next pointer",
+		"content = \"hello\" ; content = NULL",
+		"node->content == content, node->next == NULL",
+		"t_list *elem = ft_lstnew(strdup(\"hello\"));\nprintf(\"content: '%s', next: %p\\n\", (char*)elem->content, (void*)elem->next);",
+		test_lstnew},
+
+	{"libft_lstadd_front", "ft_lstadd_front", "Prepend node to list head", "BONUS", "Tests adding to empty list and existing list",
+		"Add to *lst = NULL ; then prepend elem0 to elem1",
+		"head points to new element, new element links to previous head",
+		"t_list *head = NULL;\nft_lstadd_front(&head, ft_lstnew(\"first\"));\nft_lstadd_front(&head, ft_lstnew(\"zero\"));\n// head is now \"zero\" -> \"first\" -> NULL",
+		test_lstadd_front},
+
+	{"libft_lstsize", "ft_lstsize", "Count number of elements in list", "BONUS", "Tests empty list (0) and multi-node count",
+		"NULL (empty list) ; 3 nodes chained",
+		"0 ; 3",
+		"printf(\"size NULL: %d\\n\", ft_lstsize(NULL)); // 0",
+		test_lstsize},
+
+	{"libft_lstlast", "ft_lstlast", "Locate last element in list", "BONUS", "Tests empty list (NULL) and tail node retrieval",
+		"NULL ; 3 nodes chained (e1 -> e2 -> e3)",
+		"NULL ; pointer to e3",
+		"t_list *last = ft_lstlast(head);\nprintf(\"last node: %p\\n\", (void*)last);",
+		test_lstlast},
+
+	{"libft_lstadd_back", "ft_lstadd_back", "Append node to list tail", "BONUS", "Tests adding to empty list and existing list",
+		"Append to *lst = NULL ; then append e2 to e1",
+		"e1 becomes head ; e2 linked as e1->next",
+		"t_list *head = NULL;\nft_lstadd_back(&head, ft_lstnew(\"first\"));\nft_lstadd_back(&head, ft_lstnew(\"second\"));",
+		test_lstadd_back},
+
+	{"libft_lstdelone", "ft_lstdelone", "Delete single list node using del", "BONUS", "Tests del called on content and node freed",
+		"node with allocated content and del_counter",
+		"del called once on content, node memory freed",
+		"t_list *node = ft_lstnew(strdup(\"payload\"));\nft_lstdelone(node, free); // frees payload and node",
+		test_lstdelone},
+
+	{"libft_lstclear", "ft_lstclear", "Delete entire list and set head to NULL", "BONUS", "Tests clearing list, invoking del, and setting *lst = NULL",
+		"3 chained nodes ; del function ; *lst set to NULL",
+		"del called on all 3 nodes, all freed, *lst set to NULL",
+		"t_list *head = ft_lstnew(strdup(\"a\"));\nhead->next = ft_lstnew(strdup(\"b\"));\nft_lstclear(&head, free);\nprintf(\"head == NULL: %d\\n\", head == NULL);",
+		test_lstclear},
+
+	{"libft_lstiter", "ft_lstiter", "Iterate over list applying function f", "BONUS", "Tests applying function f to all nodes in order",
+		"2 nodes (\"a\", \"b\") with iter_concat",
+		"f applied to each node in order: contents become \"b\", \"c\"",
+		"void print_content(void *c) { printf(\"%s\\n\", (char*)c); }\nft_lstiter(head, print_content);",
+		test_lstiter},
+
+	{"libft_lstmap", "ft_lstmap", "Map function over list into new list", "BONUS", "Tests cloning and transforming list into new list",
+		"2 nodes (\"first\", \"second\") with map_dup and free",
+		"New allocated list cloned: \"first\" -> \"second\" -> NULL",
+		"void *dup_elem(void *c) { return strdup((char*)c); }\nt_list *mapped = ft_lstmap(head, dup_elem, free);",
+		test_lstmap},
 #endif
 };
 
@@ -1242,20 +1474,37 @@ int main(int argc, char **argv) {
 		const char *target_id = argv[2];
 		for (size_t i = 0; i < g_num_tests; i++) {
 			if (strcmp(g_tests[i].id, target_id) == 0) {
-				char exp[256] = {0};
-				char act[256] = {0};
+				char exp[512] = {0};
+				char act[512] = {0};
 				char expl[512] = {0};
 				char adv[512] = {0};
 
 				int pass = g_tests[i].fn(exp, act, expl, adv);
 				if (pass) {
 					printf("STATUS: PASS\n");
+					if (!exp[0] && g_tests[i].expected) {
+						snprintf(exp, sizeof(exp), "%s", g_tests[i].expected);
+					}
+					if (!act[0]) {
+						snprintf(act, sizeof(act), "%s", exp[0] ? exp : "Success: matches expected behavior");
+					}
 				} else {
 					printf("STATUS: FAIL\n");
-					printf("EXPECTED: %s\n", exp);
-					printf("ACTUAL: %s\n", act);
-					printf("EXPLANATION: %s\n", expl);
-					printf("ADVICE: %s\n", adv);
+					if (!exp[0] && g_tests[i].expected) {
+						snprintf(exp, sizeof(exp), "%s", g_tests[i].expected);
+					}
+				}
+				if (g_tests[i].input && g_tests[i].input[0]) {
+					printf("INPUT: %s\n", g_tests[i].input);
+				}
+				if (exp[0]) printf("EXPECTED: %s\n", exp);
+				if (act[0]) printf("ACTUAL: %s\n", act);
+				if (g_tests[i].code && g_tests[i].code[0]) {
+					printf("CODE_START\n%s\nCODE_END\n", g_tests[i].code);
+				}
+				if (!pass) {
+					if (expl[0]) printf("EXPLANATION: %s\n", expl);
+					if (adv[0]) printf("ADVICE: %s\n", adv);
 				}
 				return pass ? 0 : 1;
 			}
