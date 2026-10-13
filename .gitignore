@@ -1,0 +1,29 @@
+# Binaries
+bin/
+/repaco
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test and build artifacts
+*.test
+*.out
+.repaco/
+tmp/
+.tmp/
+
+# Go workspace
+go.work
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
