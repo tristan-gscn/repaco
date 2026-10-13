@@ -18,6 +18,10 @@ func (m Model) View() string {
 		height = 12
 	}
 
+	if m.isNearbyMode {
+		return m.renderNearbyProjectsView(width, height)
+	}
+
 	if m.isDiscovery {
 		return m.renderDiscoveryView(width, height)
 	}
@@ -54,7 +58,111 @@ func (m Model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, body, bottomBar)
 }
 
-// renderDiscoveryView renders a full-screen, adaptive, interactive discovery UI when no project is detected.
+// renderNearbyProjectsView renders an interactive project selector when 42 projects are discovered in nearby folders.
+func (m Model) renderNearbyProjectsView(width, height int) string {
+	// 1. Header (1 line)
+	title := ProjectTagStyle.Render("REPACO") + " " +
+		HeaderStyle.Render("PROJECTS FOUND NEARBY — Select a project to test")
+
+	dirTag := MutedTextStyle.Render("Location: " + m.targetDir)
+	gapH := width - lipgloss.Width(title) - lipgloss.Width(dirTag) - 2
+	if gapH < 1 {
+		gapH = 1
+	}
+	topHeader := HeaderStyle.Width(width).Render(
+		lipgloss.JoinHorizontal(lipgloss.Center, title, strings.Repeat(" ", gapH), dirTag),
+	)
+
+	// 2. Bottom status bar (1 line)
+	bottomBar := FooterBarStyle.Width(width).Render(
+		MutedTextStyle.Render("Press UP/DOWN to choose a project • Press [Enter] to test • [ESC/q] to quit"),
+	)
+
+	headerH := lipgloss.Height(topHeader)
+	bottomH := lipgloss.Height(bottomBar)
+	contentH := height - headerH - bottomH
+	if contentH < 4 {
+		contentH = 4
+	}
+
+	leftTotalW := int(float64(width) * 0.35)
+	if leftTotalW < 28 {
+		leftTotalW = 28
+	}
+	rightTotalW := width - leftTotalW
+
+	leftInnerW := leftTotalW - 2
+	rightInnerW := rightTotalW - 2
+	innerH := contentH - 2
+
+	// 3. Left Pane: Discovered Projects List
+	var leftB strings.Builder
+	leftB.WriteString(" " + SectionLabelStyle.Render(fmt.Sprintf("DISCOVERED PROJECTS (%d)", len(m.nearbyProjects))) + "\n\n")
+
+	for i, p := range m.nearbyProjects {
+		line := fmt.Sprintf("  📁 %-14s [%s]", truncate(p.RelPath, leftInnerW-18), p.Detection.Project.Name)
+		if i == m.nearbyCursor {
+			rem := leftInnerW - lipgloss.Width(line)
+			if rem < 0 {
+				rem = 0
+			}
+			leftB.WriteString(SelectedRowStyle.Render(line+strings.Repeat(" ", rem)) + "\n")
+		} else {
+			leftB.WriteString(NormalRowStyle.Render(line) + "\n")
+		}
+	}
+
+	leftFitted := wrapAndFit(leftB.String(), leftInnerW, innerH)
+	leftPane := ActivePanelStyle.Width(leftInnerW).Height(innerH).Render(leftFitted)
+
+	// 4. Right Pane: Detailed Inspection of selected nearby project
+	var rightB strings.Builder
+	if m.nearbyCursor >= 0 && m.nearbyCursor < len(m.nearbyProjects) {
+		selected := m.nearbyProjects[m.nearbyCursor]
+
+		rightB.WriteString(" " + DetailTitleStyle.Render(selected.Detection.Project.Name) + "\n")
+		rightB.WriteString(" " + MutedTextStyle.Render(selected.Detection.Project.Description) + "\n\n")
+
+		rightB.WriteString(" " + SectionLabelStyle.Render("Target Location:") + "\n")
+		rightB.WriteString(fmt.Sprintf("   Path: %s\n", selected.RelPath))
+		rightB.WriteString(fmt.Sprintf("   Full: %s\n\n", selected.AbsPath))
+
+		rightB.WriteString(" " + SectionLabelStyle.Render("Configuration & Detection:") + "\n")
+		rightB.WriteString(fmt.Sprintf("   Confidence: %.0f%%\n", selected.Detection.Confidence*100))
+		if selected.Detection.HasMakefile {
+			rightB.WriteString("   Makefile  : ✔ Found\n")
+		} else {
+			rightB.WriteString("   Makefile  : ○ None required\n")
+		}
+		if selected.Detection.HasBonus {
+			rightB.WriteString("   Bonuses   : ✔ Bonus files present\n")
+		}
+
+		if len(selected.Detection.FoundFiles) > 0 {
+			rightB.WriteString("\n " + SectionLabelStyle.Render("Key Files Identified:") + "\n")
+			limit := 8
+			if len(selected.Detection.FoundFiles) < limit {
+				limit = len(selected.Detection.FoundFiles)
+			}
+			for i := 0; i < limit; i++ {
+				rightB.WriteString(fmt.Sprintf("   %s %s\n", BadgePass.Render("✔"), selected.Detection.FoundFiles[i]))
+			}
+			if len(selected.Detection.FoundFiles) > limit {
+				rightB.WriteString(fmt.Sprintf("   ... and %d more files\n", len(selected.Detection.FoundFiles)-limit))
+			}
+		}
+
+		rightB.WriteString("\n " + AdviceStyle.Render("👉 Press [Enter] to run tests on this project now"))
+	}
+
+	rightFitted := wrapAndFit(rightB.String(), rightInnerW, innerH)
+	rightPane := PanelStyle.Width(rightInnerW).Height(innerH).Render(rightFitted)
+
+	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPane, rightPane)
+	return lipgloss.JoinVertical(lipgloss.Left, topHeader, body, bottomBar)
+}
+
+// renderDiscoveryView renders a full-screen, adaptive, interactive discovery UI when no project is detected anywhere.
 func (m Model) renderDiscoveryView(width, height int) string {
 	// 1. Header (1 line)
 	title := ProjectTagStyle.Render("REPACO") + " " +

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"time"
@@ -9,12 +10,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/tristan-gscn/repaco/internal/detector"
+	"github.com/tristan-gscn/repaco/internal/engine"
 	"github.com/tristan-gscn/repaco/internal/model"
 )
 
 type EventMsg model.EngineEvent
 
 type Model struct {
+	ctx          context.Context
+	eng          *engine.Engine
 	detection    *model.DetectionResult
 	results      []model.TestResult
 	cursor       int
@@ -32,14 +36,19 @@ type Model struct {
 	startTime    time.Time
 	elapsedTime  time.Duration
 
-	// Discovery mode when no project is detected
+	// Nearby projects mode when detected around
+	isNearbyMode   bool
+	nearbyProjects []model.DiscoveredProject
+	nearbyCursor   int
+
+	// Discovery mode when no project is detected anywhere
 	isDiscovery     bool
 	knownProjects   []model.ProjectMetadata
 	discoveryCursor int
 	targetDir       string
 }
 
-func NewModel(eventsChan <-chan model.EngineEvent) Model {
+func NewModel(ctx context.Context, eng *engine.Engine) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(JBAccent)
@@ -52,9 +61,17 @@ func NewModel(eventsChan <-chan model.EngineEvent) Model {
 	}
 
 	cwd, _ := os.Getwd()
+	ch := make(chan model.EngineEvent, 100)
+
+	// Launch engine in background
+	go func() {
+		_, _ = eng.Run(ctx, ch)
+	}()
 
 	return Model{
-		eventsChan:    eventsChan,
+		ctx:           ctx,
+		eng:           eng,
+		eventsChan:    ch,
 		running:       true,
 		statusMsg:     "Scanning directory for 42 project...",
 		spinner:       s,
@@ -104,28 +121,42 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.targetDir = ev.Detection.RootDir
 			}
 			m.statusMsg = ev.Message
+
+		case model.EventProjectsNearbyFound:
+			m.running = false
+			m.isNearbyMode = true
+			m.nearbyProjects = ev.ProjectsNearby
+			m.nearbyCursor = 0
+			m.statusMsg = ev.Message
+			return m, nil
+
 		case model.EventBuildStarted:
 			m.statusMsg = ev.Message
+
 		case model.EventBuildDone:
 			if ev.TestResult != nil {
 				m.results = append(m.results, *ev.TestResult)
 				m.updateStats()
 			}
+
 		case model.EventTestStarted:
 			m.statusMsg = ev.Message
 			m.currentTest = ev.Current
 			m.totalTests = ev.Total
+
 		case model.EventTestCompleted:
 			if ev.TestResult != nil {
 				m.results = append(m.results, *ev.TestResult)
 				m.updateStats()
 			}
+
 		case model.EventSuiteDone:
 			m.running = false
 			m.done = true
 			m.elapsedTime = time.Since(m.startTime)
 			m.statusMsg = "Testing completed."
 			return m, nil
+
 		case model.EventFatalError:
 			m.running = false
 			m.done = true
@@ -140,7 +171,34 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc", "ctrl+c", "q":
 			return m, tea.Quit
 
+		case "enter":
+			if m.isNearbyMode && len(m.nearbyProjects) > 0 {
+				selected := m.nearbyProjects[m.nearbyCursor]
+				m.isNearbyMode = false
+				m.running = true
+				m.results = nil
+				m.cursor = 0
+				m.stats = model.SummaryStats{}
+				m.startTime = time.Now()
+				m.statusMsg = "Testing " + selected.Detection.Project.Name + "..."
+
+				newCh := make(chan model.EngineEvent, 100)
+				m.eventsChan = newCh
+
+				go func() {
+					_, _ = m.eng.RunWithDir(m.ctx, selected.AbsPath, newCh)
+				}()
+
+				return m, waitForEvent(newCh)
+			}
+
 		case "up":
+			if m.isNearbyMode {
+				if m.nearbyCursor > 0 {
+					m.nearbyCursor--
+				}
+				return m, nil
+			}
 			if m.isDiscovery {
 				if m.discoveryCursor > 0 {
 					m.discoveryCursor--
@@ -152,6 +210,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case "down":
+			if m.isNearbyMode {
+				if m.nearbyCursor < len(m.nearbyProjects)-1 {
+					m.nearbyCursor++
+				}
+				return m, nil
+			}
 			if m.isDiscovery {
 				if m.discoveryCursor < len(m.knownProjects)-1 {
 					m.discoveryCursor++

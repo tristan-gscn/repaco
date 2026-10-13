@@ -183,6 +183,65 @@ func (d *Detector) Detect(rootDir string) (*model.DetectionResult, error) {
 	}, nil
 }
 
+// DetectAround scans immediate subdirectories and parent siblings to discover 42 projects nearby.
+func (d *Detector) DetectAround(rootDir string) ([]model.DiscoveredProject, error) {
+	absDir, err := filepath.Abs(rootDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var candidates []string
+	seen := make(map[string]bool)
+	seen[absDir] = true
+
+	// 1. Immediate subdirectories of rootDir
+	if entries, err := os.ReadDir(absDir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+				p := filepath.Join(absDir, e.Name())
+				if !seen[p] {
+					seen[p] = true
+					candidates = append(candidates, p)
+				}
+			}
+		}
+	}
+
+	// 2. Sibling directories in parent folder
+	parent := filepath.Dir(absDir)
+	if entries, err := os.ReadDir(parent); err == nil {
+		for _, e := range entries {
+			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") {
+				p := filepath.Join(parent, e.Name())
+				if !seen[p] {
+					seen[p] = true
+					candidates = append(candidates, p)
+				}
+			}
+		}
+	}
+
+	var discovered []model.DiscoveredProject
+	for _, c := range candidates {
+		res, err := d.Detect(c)
+		if err == nil && res.Project.ID != model.ProjectUnknown {
+			rel, err := filepath.Rel(absDir, c)
+			if err != nil {
+				rel = c
+			} else if !strings.HasPrefix(rel, ".") {
+				rel = "./" + rel
+			}
+			discovered = append(discovered, model.DiscoveredProject{
+				Detection: *res,
+				RelPath:   rel,
+				AbsPath:   c,
+			})
+		}
+	}
+
+	return discovered, nil
+}
+
 func (d *Detector) populateFiles(rootDir string, meta model.ProjectMetadata, fileMap map[string]bool, res *model.DetectionResult) {
 	for _, req := range meta.RequiredFiles {
 		if fileMap[req] || fileExistsInTree(rootDir, req) {

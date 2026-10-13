@@ -10,7 +10,6 @@ import (
 
 	"github.com/tristan-gscn/repaco/internal/config"
 	"github.com/tristan-gscn/repaco/internal/engine"
-	"github.com/tristan-gscn/repaco/internal/model"
 	"github.com/tristan-gscn/repaco/internal/ui/tui"
 
 	// Register all project suites
@@ -57,15 +56,9 @@ func main() {
 	defer cancel()
 
 	eng := engine.New(cfg)
-	eventsChan := make(chan model.EngineEvent, 100)
-
-	// Launch background testing engine
-	go func() {
-		_, _ = eng.Run(ctx, eventsChan)
-	}()
 
 	// Launch full TUI interface immediately
-	if err := tui.Run(eventsChan); err != nil {
+	if err := tui.Run(ctx, eng); err != nil {
 		fmt.Fprintf(os.Stderr, "TUI error: %v\n", err)
 		os.Exit(1)
 	}

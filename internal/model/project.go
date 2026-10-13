@@ -34,3 +34,10 @@ type DetectionResult struct {
 	HasBonus     bool            `json:"has_bonus"`
 	HasMakefile  bool            `json:"has_makefile"`
 }
+
+// DiscoveredProject represents a 42 project detected in nearby folders.
+type DiscoveredProject struct {
+	Detection DetectionResult `json:"detection"`
+	RelPath   string          `json:"rel_path"`
+	AbsPath   string          `json:"abs_path"`
+}

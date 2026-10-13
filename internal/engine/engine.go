@@ -64,6 +64,17 @@ func (e *Engine) Run(ctx context.Context, eventsChan chan<- model.EngineEvent) (
 	}
 
 	if det.Project.ID == model.ProjectUnknown {
+		// Look in nearby directories first
+		nearby, errAround := e.detector.DetectAround(e.cfg.TargetDir)
+		if errAround == nil && len(nearby) > 0 {
+			eventsChan <- model.EngineEvent{
+				Type:           model.EventProjectsNearbyFound,
+				ProjectsNearby: nearby,
+				Message:        fmt.Sprintf("Found %d 42 projects nearby", len(nearby)),
+			}
+			return nil, nil
+		}
+
 		err := fmt.Errorf("no supported 42 project recognized in %s", e.cfg.TargetDir)
 		eventsChan <- model.EngineEvent{
 			Type:  model.EventFatalError,
@@ -178,4 +189,10 @@ func (e *Engine) Run(ctx context.Context, eventsChan chan<- model.EngineEvent) (
 	}
 
 	return suiteResult, nil
+}
+
+// RunWithDir executes testing for a specific project directory.
+func (e *Engine) RunWithDir(ctx context.Context, dir string, eventsChan chan<- model.EngineEvent) (*model.SuiteResult, error) {
+	e.cfg.TargetDir = dir
+	return e.Run(ctx, eventsChan)
 }

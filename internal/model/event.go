@@ -4,24 +4,26 @@ package model
 type EventType string
 
 const (
-	EventDetectStarted EventType = "DETECT_STARTED"
-	EventDetectDone    EventType = "DETECT_DONE"
-	EventBuildStarted  EventType = "BUILD_STARTED"
-	EventBuildProgress EventType = "BUILD_PROGRESS"
-	EventBuildDone     EventType = "BUILD_DONE"
-	EventTestStarted   EventType = "TEST_STARTED"
-	EventTestCompleted EventType = "TEST_COMPLETED"
-	EventSuiteDone     EventType = "SUITE_DONE"
-	EventFatalError    EventType = "FATAL_ERROR"
+	EventDetectStarted       EventType = "DETECT_STARTED"
+	EventDetectDone          EventType = "DETECT_DONE"
+	EventProjectsNearbyFound EventType = "PROJECTS_NEARBY_FOUND"
+	EventBuildStarted        EventType = "BUILD_STARTED"
+	EventBuildProgress       EventType = "BUILD_PROGRESS"
+	EventBuildDone           EventType = "BUILD_DONE"
+	EventTestStarted         EventType = "TEST_STARTED"
+	EventTestCompleted       EventType = "TEST_COMPLETED"
+	EventSuiteDone           EventType = "SUITE_DONE"
+	EventFatalError          EventType = "FATAL_ERROR"
 )
 
 // EngineEvent carries real-time updates from engine to UI.
 type EngineEvent struct {
-	Type       EventType        `json:"type"`
-	Message    string           `json:"message,omitempty"`
-	Detection  *DetectionResult `json:"detection,omitempty"`
-	TestResult *TestResult      `json:"test_result,omitempty"`
-	Current    int              `json:"current,omitempty"`
-	Total      int              `json:"total,omitempty"`
-	Error      error            `json:"error,omitempty"`
+	Type           EventType           `json:"type"`
+	Message        string              `json:"message,omitempty"`
+	Detection      *DetectionResult    `json:"detection,omitempty"`
+	ProjectsNearby []DiscoveredProject `json:"projects_nearby,omitempty"`
+	TestResult     *TestResult         `json:"test_result,omitempty"`
+	Current        int                 `json:"current,omitempty"`
+	Total          int                 `json:"total,omitempty"`
+	Error          error               `json:"error,omitempty"`
 }
