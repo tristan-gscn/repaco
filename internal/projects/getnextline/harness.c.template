@@ -1,0 +1,493 @@
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include "get_next_line.h"
+
+typedef struct s_test_entry {
+	const char *id;
+	const char *module;
+	const char *name;
+	const char *category;
+	const char *desc;
+	const char *input;
+	const char *expected;
+	const char *code;
+	int (*fn)(char *exp, char *act, char *expl, char *adv);
+} t_test_entry;
+
+/* Helper: create an unlinked temporary file descriptor with given content */
+static int create_test_file(const char *content, size_t len) {
+	char path[] = "/tmp/repaco_gnl_XXXXXX";
+	int fd = mkstemp(path);
+	if (fd < 0)
+		return -1;
+	unlink(path);
+	if (len > 0 && content != NULL) {
+		ssize_t written = write(fd, content, len);
+		(void)written;
+		lseek(fd, 0, SEEK_SET);
+	}
+	return fd;
+}
+
+static void escape_str(char *dest, size_t dest_sz, const char *src) {
+	if (!src) {
+		snprintf(dest, dest_sz, "NULL");
+		return ;
+	}
+	size_t d = 0;
+	dest[d++] = '\"';
+	for (size_t i = 0; src[i] && d + 6 < dest_sz; i++) {
+		unsigned char c = (unsigned char)src[i];
+		if (c == '\n') {
+			dest[d++] = '\\'; dest[d++] = 'n';
+		} else if (c == '\t') {
+			dest[d++] = '\\'; dest[d++] = 't';
+		} else if (c == '\r') {
+			dest[d++] = '\\'; dest[d++] = 'r';
+		} else if (c == '\\') {
+			dest[d++] = '\\'; dest[d++] = '\\';
+		} else if (c == '\"') {
+			dest[d++] = '\\'; dest[d++] = '\"';
+		} else if (c < 32 || c >= 127) {
+			d += snprintf(dest + d, dest_sz - d, "\\x%02x", c);
+		} else {
+			dest[d++] = (char)c;
+		}
+	}
+	if (d + 2 < dest_sz) {
+		dest[d++] = '\"';
+	}
+	dest[d] = '\0';
+}
+
+/* Helper to compare a sequence of expected lines against get_next_line(fd) */
+static int verify_gnl_sequence(int fd, const char **expected, size_t exp_count,
+                               char *exp_out, char *act_out, char *expl, char *adv) {
+	for (size_t i = 0; i < exp_count; i++) {
+		char *actual = get_next_line(fd);
+		const char *target = expected[i];
+
+		if (target == NULL && actual != NULL) {
+			char esc_act[256];
+			escape_str(esc_act, sizeof(esc_act), actual);
+			snprintf(exp_out, 512, "Call %zu: NULL (EOF)", i + 1);
+			snprintf(act_out, 512, "Call %zu: %s", i + 1, esc_act);
+			snprintf(expl, 512, "get_next_line returned a string when NULL was expected at EOF.");
+			snprintf(adv, 512, "Ensure get_next_line returns NULL when EOF is reached.");
+			free(actual);
+			return 0;
+		}
+
+		if (target != NULL && actual == NULL) {
+			char esc_exp[256];
+			escape_str(esc_exp, sizeof(esc_exp), target);
+			snprintf(exp_out, 512, "Call %zu: %s", i + 1, esc_exp);
+			snprintf(act_out, 512, "Call %zu: NULL", i + 1);
+			snprintf(expl, 512, "get_next_line returned NULL prematurely before reading the full line.");
+			snprintf(adv, 512, "Check loop termination and buffer stitching logic.");
+			return 0;
+		}
+
+		if (target != NULL && actual != NULL) {
+			if (strcmp(actual, target) != 0) {
+				char esc_exp[256];
+				char esc_act[256];
+				escape_str(esc_exp, sizeof(esc_exp), target);
+				escape_str(esc_act, sizeof(esc_act), actual);
+				snprintf(exp_out, 512, "Call %zu: %s", i + 1, esc_exp);
+				snprintf(act_out, 512, "Call %zu: %s", i + 1, esc_act);
+				snprintf(expl, 512, "Line content mismatch on call %zu.", i + 1);
+				snprintf(adv, 512, "Ensure the newline '\\n' is preserved in the line unless at EOF.");
+				free(actual);
+				return 0;
+			}
+			free(actual);
+		}
+	}
+
+	/* Also verify subsequent call after EOF returns NULL */
+	char *after = get_next_line(fd);
+	if (after != NULL) {
+		char esc_act[256];
+		escape_str(esc_act, sizeof(esc_act), after);
+		snprintf(exp_out, 512, "Call after EOF: NULL");
+		snprintf(act_out, 512, "Call after EOF: %s", esc_act);
+		snprintf(expl, 512, "get_next_line failed to return NULL on subsequent calls after EOF.");
+		snprintf(adv, 512, "Ensure static buffer is properly reset to NULL after EOF.");
+		free(after);
+		return 0;
+	}
+
+	snprintf(exp_out, 512, "%zu lines matched expected output", exp_count);
+	snprintf(act_out, 512, "%zu lines read successfully", exp_count);
+	return 1;
+}
+
+/* ========================================================================= */
+/* TEST IMPLEMENTATIONS                                                      */
+/* ========================================================================= */
+
+/* --- Standard Scenarios (get_next_line.c) --- */
+static int test_single_line_newline(char *exp, char *act, char *expl, char *adv) {
+	const char *content = "Single line with newline.\n";
+	int fd = create_test_file(content, strlen(content));
+	const char *expected[] = {"Single line with newline.\n", NULL};
+	int res = verify_gnl_sequence(fd, expected, 2, exp, act, expl, adv);
+	close(fd);
+	return res;
+}
+
+static int test_single_line_no_newline(char *exp, char *act, char *expl, char *adv) {
+	const char *content = "Single line without newline.";
+	int fd = create_test_file(content, strlen(content));
+	const char *expected[] = {"Single line without newline.", NULL};
+	int res = verify_gnl_sequence(fd, expected, 2, exp, act, expl, adv);
+	close(fd);
+	return res;
+}
+
+static int test_multiple_lines(char *exp, char *act, char *expl, char *adv) {
+	const char *content = "Line 1: 42 Network\nLine 2: Lausanne\nLine 3: Coding\n";
+	int fd = create_test_file(content, strlen(content));
+	const char *expected[] = {
+		"Line 1: 42 Network\n",
+		"Line 2: Lausanne\n",
+		"Line 3: Coding\n",
+		NULL
+	};
+	int res = verify_gnl_sequence(fd, expected, 4, exp, act, expl, adv);
+	close(fd);
+	return res;
+}
+
+static int test_no_trailing_newline(char *exp, char *act, char *expl, char *adv) {
+	const char *content = "First line with nl\nSecond line without newline";
+	int fd = create_test_file(content, strlen(content));
+	const char *expected[] = {
+		"First line with nl\n",
+		"Second line without newline",
+		NULL
+	};
+	int res = verify_gnl_sequence(fd, expected, 3, exp, act, expl, adv);
+	close(fd);
+	return res;
+}
+
+static int test_empty_file(char *exp, char *act, char *expl, char *adv) {
+	int fd = create_test_file("", 0);
+	const char *expected[] = {NULL};
+	int res = verify_gnl_sequence(fd, expected, 1, exp, act, expl, adv);
+	close(fd);
+	return res;
+}
+
+static int test_empty_line_only(char *exp, char *act, char *expl, char *adv) {
+	const char *content = "\n";
+	int fd = create_test_file(content, 1);
+	const char *expected[] = {"\n", NULL};
+	int res = verify_gnl_sequence(fd, expected, 2, exp, act, expl, adv);
+	close(fd);
+	return res;
+}
+
+static int test_multiple_empty_lines(char *exp, char *act, char *expl, char *adv) {
+	const char *content = "\n\n\n\n";
+	int fd = create_test_file(content, 4);
+	const char *expected[] = {"\n", "\n", "\n", "\n", NULL};
+	int res = verify_gnl_sequence(fd, expected, 5, exp, act, expl, adv);
+	close(fd);
+	return res;
+}
+
+static int test_long_line(char *exp, char *act, char *expl, char *adv) {
+	char *buf = malloc(8192);
+	if (!buf) return 0;
+	memset(buf, 'A', 4000);
+	buf[4000] = '\n';
+	memset(buf + 4001, 'B', 4000);
+	buf[8001] = '\n';
+	buf[8002] = '\0';
+
+	int fd = create_test_file(buf, 8002);
+	char *line1 = malloc(4002);
+	char *line2 = malloc(4002);
+	memset(line1, 'A', 4000); line1[4000] = '\n'; line1[4001] = '\0';
+	memset(line2, 'B', 4000); line2[4000] = '\n'; line2[4001] = '\0';
+
+	const char *expected[] = {line1, line2, NULL};
+	int res = verify_gnl_sequence(fd, expected, 3, exp, act, expl, adv);
+
+	free(line1);
+	free(line2);
+	free(buf);
+	close(fd);
+	return res;
+}
+
+static int test_short_lines(char *exp, char *act, char *expl, char *adv) {
+	const char *content = "a\nb\nc\nd\ne\n";
+	int fd = create_test_file(content, 10);
+	const char *expected[] = {"a\n", "b\n", "c\n", "d\n", "e\n", NULL};
+	int res = verify_gnl_sequence(fd, expected, 6, exp, act, expl, adv);
+	close(fd);
+	return res;
+}
+
+static int test_calls_after_eof(char *exp, char *act, char *expl, char *adv) {
+	const char *content = "Only one line\n";
+	int fd = create_test_file(content, strlen(content));
+
+	char *l1 = get_next_line(fd);
+	if (!l1 || strcmp(l1, "Only one line\n") != 0) {
+		snprintf(expl, 512, "Failed to read first line.");
+		free(l1); close(fd); return 0;
+	}
+	free(l1);
+
+	for (int i = 0; i < 5; i++) {
+		char *eof_line = get_next_line(fd);
+		if (eof_line != NULL) {
+			snprintf(exp, 512, "Repeated call %d after EOF: NULL", i + 1);
+			snprintf(act, 512, "Repeated call %d after EOF: non-NULL", i + 1);
+			snprintf(expl, 512, "get_next_line returned non-NULL after reaching EOF.");
+			snprintf(adv, 512, "Always return NULL on any call after EOF.");
+			free(eof_line); close(fd); return 0;
+		}
+	}
+	close(fd);
+	snprintf(exp, 512, "5 consecutive calls after EOF returned NULL");
+	snprintf(act, 512, "All calls returned NULL cleanly");
+	return 1;
+}
+
+static int test_pipe_read(char *exp, char *act, char *expl, char *adv) {
+	int p[2];
+	if (pipe(p) == -1) return 0;
+	const char *msg = "Pipe line 1\nPipe line 2 without nl";
+	ssize_t w = write(p[1], msg, strlen(msg));
+	(void)w;
+	close(p[1]); // Close write end to trigger EOF on read
+
+	const char *expected[] = {"Pipe line 1\n", "Pipe line 2 without nl", NULL};
+	int res = verify_gnl_sequence(p[0], expected, 3, exp, act, expl, adv);
+	close(p[0]);
+	return res;
+}
+
+/* --- Edge Cases (get_next_line_edge_cases.c) --- */
+static int test_edge_negative_fd(char *exp, char *act, char *expl, char *adv) {
+	char *l1 = get_next_line(-1);
+	char *l2 = get_next_line(-42);
+	if (l1 != NULL || l2 != NULL) {
+		snprintf(exp, 512, "get_next_line(-1) and get_next_line(-42) return NULL");
+		snprintf(act, 512, "Returned non-NULL pointer");
+		snprintf(expl, 512, "get_next_line did not validate fd < 0.");
+		snprintf(adv, 512, "Check if (fd < 0 || BUFFER_SIZE <= 0) return NULL at function start.");
+		free(l1); free(l2); return 0;
+	}
+	snprintf(exp, 512, "NULL");
+	snprintf(act, 512, "NULL");
+	return 1;
+}
+
+static int test_edge_closed_fd(char *exp, char *act, char *expl, char *adv) {
+	int fd = create_test_file("Hello\n", 6);
+	close(fd); // closed immediately
+
+	char *l = get_next_line(fd);
+	if (l != NULL) {
+		snprintf(exp, 512, "NULL for closed file descriptor");
+		snprintf(act, 512, "Non-NULL returned");
+		snprintf(expl, 512, "read() fails on closed fd, get_next_line must return NULL.");
+		snprintf(adv, 512, "Handle read() return < 0 by cleaning up and returning NULL.");
+		free(l); return 0;
+	}
+	snprintf(exp, 512, "NULL");
+	snprintf(act, 512, "NULL");
+	return 1;
+}
+
+static int test_edge_large_fd(char *exp, char *act, char *expl, char *adv) {
+	char *l = get_next_line(10240);
+	if (l != NULL) {
+		snprintf(exp, 512, "NULL for out-of-bounds fd");
+		snprintf(act, 512, "Non-NULL returned");
+		snprintf(expl, 512, "Calling get_next_line on invalid high fd must return NULL.");
+		snprintf(adv, 512, "Check if fd is within acceptable range before reading.");
+		free(l); return 0;
+	}
+	snprintf(exp, 512, "NULL");
+	snprintf(act, 512, "NULL");
+	return 1;
+}
+
+/* --- Bonus: Multi-FD reading (get_next_line_bonus.c) --- */
+#ifdef HAS_BONUS
+static int test_bonus_interleaved(char *exp, char *act, char *expl, char *adv) {
+	int fd1 = create_test_file("A1\nA2\nA3\n", 9);
+	int fd2 = create_test_file("B1\nB2\n", 6);
+	int fd3 = create_test_file("C1\nC2\nC3\nC4\n", 12);
+
+	char *l1 = get_next_line(fd1); // "A1\n"
+	char *l2 = get_next_line(fd2); // "B1\n"
+	char *l3 = get_next_line(fd3); // "C1\n"
+	char *l4 = get_next_line(fd1); // "A2\n"
+	char *l5 = get_next_line(fd2); // "B2\n"
+	char *l6 = get_next_line(fd2); // NULL (B ends)
+	char *l7 = get_next_line(fd3); // "C2\n"
+	char *l8 = get_next_line(fd1); // "A3\n"
+	char *l9 = get_next_line(fd1); // NULL (A ends)
+	char *l10 = get_next_line(fd3); // "C3\n"
+	char *l11 = get_next_line(fd3); // "C4\n"
+	char *l12 = get_next_line(fd3); // NULL (C ends)
+
+	int ok = 1;
+	if (!l1 || strcmp(l1, "A1\n") != 0) ok = 0;
+	if (!l2 || strcmp(l2, "B1\n") != 0) ok = 0;
+	if (!l3 || strcmp(l3, "C1\n") != 0) ok = 0;
+	if (!l4 || strcmp(l4, "A2\n") != 0) ok = 0;
+	if (!l5 || strcmp(l5, "B2\n") != 0) ok = 0;
+	if (l6 != NULL) ok = 0;
+	if (!l7 || strcmp(l7, "C2\n") != 0) ok = 0;
+	if (!l8 || strcmp(l8, "A3\n") != 0) ok = 0;
+	if (l9 != NULL) ok = 0;
+	if (!l10 || strcmp(l10, "C3\n") != 0) ok = 0;
+	if (!l11 || strcmp(l11, "C4\n") != 0) ok = 0;
+	if (l12 != NULL) ok = 0;
+
+	free(l1); free(l2); free(l3); free(l4); free(l5);
+	free(l6); free(l7); free(l8); free(l9); free(l10);
+	free(l11); free(l12);
+	close(fd1); close(fd2); close(fd3);
+
+	if (!ok) {
+		snprintf(exp, 512, "Independent state across 3 file descriptors");
+		snprintf(act, 512, "Line content or EOF mismatch across interleaved calls");
+		snprintf(expl, 512, "get_next_line failed to maintain separate buffers per file descriptor.");
+		snprintf(adv, 512, "Use an array or linked list indexed by fd to store static buffers.");
+		return 0;
+	}
+	snprintf(exp, 512, "Interleaved reads from 3 fds succeeded without losing state");
+	snprintf(act, 512, "All lines matched expected values across 3 fds");
+	return 1;
+}
+#endif
+
+/* ========================================================================= */
+/* TEST TABLE                                                                */
+/* ========================================================================= */
+
+static const t_test_entry g_tests[] = {
+	/* --- get_next_line.c --- */
+	{"gnl_single_line_newline", "get_next_line", "Single line with newline", "MANDATORY", "Tests reading a single line ending with \\n",
+		"\"Single line with newline.\\n\"", "\"Single line with newline.\\n\", then NULL", "get_next_line(fd);", test_single_line_newline},
+	{"gnl_single_line_no_newline", "get_next_line", "Single line without newline", "MANDATORY", "Tests reading a line not ending with \\n",
+		"\"Single line without newline.\"", "\"Single line without newline.\", then NULL", "get_next_line(fd);", test_single_line_no_newline},
+	{"gnl_multiple_lines", "get_next_line", "Standard multi-line file", "MANDATORY", "Tests reading a 3-line file",
+		"3 lines ending with \\n", "Line 1\\n, Line 2\\n, Line 3\\n, NULL", "while ((line = get_next_line(fd))) { ... }", test_multiple_lines},
+	{"gnl_no_trailing_newline", "get_next_line", "File ending without trailing newline", "MANDATORY", "Tests last line lacking \\n",
+		"Line 1\\n, Line 2 without \\n", "Line 1\\n, Line 2 without \\n, NULL", "get_next_line(fd);", test_no_trailing_newline},
+	{"gnl_empty_file", "get_next_line", "Empty file (0 bytes)", "MANDATORY", "Tests reading an empty file",
+		"Empty file (0 bytes)", "NULL on first call", "get_next_line(fd); // returns NULL", test_empty_file},
+	{"gnl_empty_line_only", "get_next_line", "Single newline only (\\n)", "MANDATORY", "Tests file containing just \\n",
+		"\"\\n\"", "\"\\n\", then NULL", "get_next_line(fd);", test_empty_line_only},
+	{"gnl_multiple_empty_lines", "get_next_line", "Multiple consecutive newlines", "MANDATORY", "Tests file with 4 empty lines",
+		"\"\\n\\n\\n\\n\"", "4 calls of \"\\n\", then NULL", "get_next_line(fd);", test_multiple_empty_lines},
+	{"gnl_long_line", "get_next_line", "Long line (> 4000 chars)", "MANDATORY", "Tests reading two 4000-character lines",
+		"Two 4000-char lines", "4000 'A'\\n, 4000 'B'\\n, NULL", "get_next_line(fd);", test_long_line},
+	{"gnl_short_lines", "get_next_line", "Very short single-char lines", "MANDATORY", "Tests lines containing a single character",
+		"\"a\\nb\\nc\\nd\\ne\\n\"", "\"a\\n\", \"b\\n\", \"c\\n\", \"d\\n\", \"e\\n\", NULL", "get_next_line(fd);", test_short_lines},
+	{"gnl_calls_after_eof", "get_next_line", "Repeated calls after EOF", "MANDATORY", "Tests calling get_next_line 5 times after EOF",
+		"5 calls after reaching EOF", "NULL on every call", "get_next_line(fd); // must keep returning NULL", test_calls_after_eof},
+	{"gnl_pipe_read", "get_next_line", "Reading from pipe (stdin simulation)", "MANDATORY", "Tests reading from pipe file descriptor",
+		"Pipe stream data", "Lines read until pipe EOF", "get_next_line(pipe_fd);", test_pipe_read},
+
+	/* --- get_next_line_edge_cases.c --- */
+	{"gnl_edge_negative_fd", "get_next_line_edge_cases", "Negative file descriptor", "EDGE_CASE", "Tests get_next_line(-1) and get_next_line(-42)",
+		"fd = -1, fd = -42", "NULL", "get_next_line(-1); // returns NULL", test_edge_negative_fd},
+	{"gnl_edge_closed_fd", "get_next_line_edge_cases", "Closed file descriptor", "EDGE_CASE", "Tests get_next_line on an already closed fd",
+		"Closed file descriptor", "NULL", "close(fd); get_next_line(fd);", test_edge_closed_fd},
+	{"gnl_edge_large_fd", "get_next_line_edge_cases", "Out-of-range file descriptor", "EDGE_CASE", "Tests get_next_line(10240)",
+		"fd = 10240", "NULL", "get_next_line(10240); // returns NULL", test_edge_large_fd},
+
+#ifdef HAS_BONUS
+	/* --- get_next_line_bonus.c --- */
+	{"gnl_bonus_interleaved", "get_next_line_bonus", "Interleaved reads on 3 file descriptors", "BONUS", "Tests simultaneous reading on fd 3, 4, 5 without losing state",
+		"Interleaved calls on 3 open fds", "All lines read correctly from each fd", "get_next_line(fd1); get_next_line(fd2);", test_bonus_interleaved},
+#endif
+};
+
+static const size_t g_num_tests = sizeof(g_tests) / sizeof(g_tests[0]);
+
+int main(int argc, char **argv) {
+	if (argc < 2) {
+		fprintf(stderr, "Usage: %s <list|run <id>>\n", argv[0]);
+		return 1;
+	}
+
+	if (strcmp(argv[1], "list") == 0) {
+		for (size_t i = 0; i < g_num_tests; i++) {
+			printf("%s\t%s\t%s\t%s\t%s\n",
+				g_tests[i].id,
+				g_tests[i].module,
+				g_tests[i].name,
+				g_tests[i].category,
+				g_tests[i].desc);
+		}
+		return 0;
+	}
+
+	if (strcmp(argv[1], "run") == 0 && argc >= 3) {
+		const char *target_id = argv[2];
+		for (size_t i = 0; i < g_num_tests; i++) {
+			if (strcmp(g_tests[i].id, target_id) == 0) {
+				char exp[512] = {0};
+				char act[512] = {0};
+				char expl[512] = {0};
+				char adv[512] = {0};
+
+				int pass = g_tests[i].fn(exp, act, expl, adv);
+				if (pass) {
+					printf("STATUS: PASS\n");
+					if (!exp[0] && g_tests[i].expected) {
+						snprintf(exp, sizeof(exp), "%s", g_tests[i].expected);
+					}
+					if (!act[0]) {
+						snprintf(act, sizeof(act), "%s", exp[0] ? exp : "Success");
+					}
+				} else {
+					printf("STATUS: FAIL\n");
+				}
+				if (g_tests[i].input) {
+					printf("INPUT: %s\n", g_tests[i].input);
+				}
+				if (exp[0]) {
+					printf("EXPECTED: %s\n", exp);
+				}
+				if (act[0]) {
+					printf("ACTUAL: %s\n", act);
+				}
+				if (expl[0]) {
+					printf("EXPLANATION: %s\n", expl);
+				}
+				if (adv[0]) {
+					printf("ADVICE: %s\n", adv);
+				}
+				if (g_tests[i].code) {
+					printf("CODE_START\n%s\nCODE_END\n", g_tests[i].code);
+				}
+				return pass ? 0 : 1;
+			}
+		}
+		fprintf(stderr, "Unknown test id: %s\n", target_id);
+		return 2;
+	}
+
+	return 1;
+}
