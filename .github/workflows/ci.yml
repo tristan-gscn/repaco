@@ -1,4 +1,4 @@
-name: CI & Matrix Build
+name: CI & Matrix Release
 
 on:
   pull_request:
@@ -7,6 +7,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -75,3 +77,57 @@ jobs:
           name: ${{ matrix.output_name }}
           path: dist/${{ matrix.output_name }}
           retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten release assets
+        run: |
+          mkdir -p release-assets
+          find dist -type f -exec cp {} release-assets/ \;
+          ls -la release-assets
+
+      - name: Determine tag and title
+        id: meta
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+            echo "title=Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+            echo "title=repaco (latest build)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          body: |
+            ### 42 Universal Tester - Binaries
+
+            Download the standalone binary for your operating system and architecture:
+            - **Linux (x86_64)**: `repaco-linux-amd64`
+            - **Linux (ARM64)**: `repaco-linux-arm64`
+            - **macOS Apple Silicon (M1/M2/M3/M4)**: `repaco-darwin-arm64`
+            - **macOS Intel**: `repaco-darwin-amd64`
+            - **Windows (x86_64)**: `repaco-windows-amd64.exe`
+
+            #### Quick Install (macOS / Linux):
+            ```bash
+            # Example for macOS Apple Silicon:
+            curl -Lo repaco https://github.com/${{ github.repository }}/releases/download/latest/repaco-darwin-arm64
+            chmod +x repaco
+            sudo mv repaco /usr/local/bin/
+            ```
+          files: release-assets/*
