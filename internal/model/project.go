@@ -8,6 +8,7 @@ const (
 	ProjectFtPrintf    ProjectID = "ft_printf"
 	ProjectGetNextLine ProjectID = "get_next_line"
 	ProjectPushSwap    ProjectID = "push_swap"
+	ProjectCodexion    ProjectID = "codexion"
 	ProjectUnknown     ProjectID = "unknown"
 )
 

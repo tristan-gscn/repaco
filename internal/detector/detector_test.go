@@ -70,7 +70,21 @@ func TestDetectorMockProjects(t *testing.T) {
 		t.Errorf("Expected ProjectPushSwap, got %s", res.Project.ID)
 	}
 
-	// 5. Detect around test
+	// 5. Mock codexion
+	cdxDir := filepath.Join(tmpDir, "codexion")
+	_ = os.MkdirAll(cdxDir, 0755)
+	_ = os.WriteFile(filepath.Join(cdxDir, "codexion.h"), []byte(""), 0644)
+	_ = os.WriteFile(filepath.Join(cdxDir, "Makefile"), []byte("all:\n"), 0644)
+
+	res, err = d.Detect(cdxDir)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	if res.Project.ID != model.ProjectCodexion {
+		t.Errorf("Expected ProjectCodexion, got %s", res.Project.ID)
+	}
+
+	// 6. Detect around test
 	detected, err := d.DetectAround(libftDir)
 	if err != nil {
 		t.Fatalf("DetectAround failed: %v", err)

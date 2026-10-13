@@ -73,6 +73,18 @@ var KnownProjects = map[model.ProjectID]model.ProjectMetadata{
 			"checker.h",
 		},
 	},
+	model.ProjectCodexion: {
+		ID:             model.ProjectCodexion,
+		Name:           "codexion",
+		Description:    "High-precision multi-threaded simulation and concurrency scheduler",
+		SubjectVersion: "1.0",
+		HasMakefile:    true,
+		BinaryName:     "codexion",
+		RequiredFiles: []string{
+			"Makefile", "codexion.h",
+		},
+		BonusFiles: []string{},
+	},
 }
 
 // Detector analyzes directory structure to identify which 42 project it contains.
@@ -121,7 +133,30 @@ func (d *Detector) Detect(rootDir string) (*model.DetectionResult, error) {
 		return res, nil
 	}
 
-	// 2. Check push_swap: unique signature is push_swap.h or Makefile producing push_swap
+	// 2. Check codexion: unique signature is codexion.h or Makefile producing codexion
+	isCodexion := false
+	if fileMap["codexion.h"] || hasSubfile(absDir, "includes", "codexion.h") || hasSubfile(absDir, "inc", "codexion.h") {
+		isCodexion = true
+	} else if fileMap["Makefile"] {
+		if content, err := os.ReadFile(filepath.Join(absDir, "Makefile")); err == nil {
+			if strings.Contains(string(content), "codexion") {
+				isCodexion = true
+			}
+		}
+	}
+	if isCodexion {
+		meta := KnownProjects[model.ProjectCodexion]
+		res := &model.DetectionResult{
+			Project:     meta,
+			Confidence:  1.0,
+			RootDir:     absDir,
+			HasMakefile: fileMap["Makefile"],
+		}
+		d.populateFiles(absDir, meta, fileMap, res)
+		return res, nil
+	}
+
+	// 3. Check push_swap: unique signature is push_swap.h or Makefile producing push_swap
 	if fileMap["push_swap.h"] || hasSubfile(absDir, "includes", "push_swap.h") {
 		meta := KnownProjects[model.ProjectPushSwap]
 		res := &model.DetectionResult{
@@ -269,7 +304,8 @@ func mightBeCProject(dir string) bool {
 		name := e.Name()
 		if name == "Makefile" || name == "makefile" ||
 			strings.HasSuffix(name, ".c") || strings.HasSuffix(name, ".h") ||
-			name == "includes" || name == "src" || name == "srcs" || name == "inc" {
+			name == "includes" || name == "src" || name == "srcs" || name == "inc" ||
+			name == "codexion" {
 			return true
 		}
 	}

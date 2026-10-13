@@ -90,6 +90,7 @@ func NewModel(ctx context.Context, eng *engine.Engine) Model {
 		detector.KnownProjects[model.ProjectFtPrintf],
 		detector.KnownProjects[model.ProjectGetNextLine],
 		detector.KnownProjects[model.ProjectPushSwap],
+		detector.KnownProjects[model.ProjectCodexion],
 	}
 
 	cwd, _ := os.Getwd()

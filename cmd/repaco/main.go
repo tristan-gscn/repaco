@@ -17,6 +17,7 @@ import (
 	"github.com/tristan-gscn/repaco/internal/ui/tui"
 
 	// Register all project suites
+	_ "github.com/tristan-gscn/repaco/internal/projects/codexion"
 	_ "github.com/tristan-gscn/repaco/internal/projects/ftprintf"
 	_ "github.com/tristan-gscn/repaco/internal/projects/getnextline"
 	_ "github.com/tristan-gscn/repaco/internal/projects/libft"
