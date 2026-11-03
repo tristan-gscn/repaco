@@ -15,6 +15,7 @@ import (
 	"github.com/tristan-gscn/repaco/internal/model"
 	"github.com/tristan-gscn/repaco/internal/ui/agent"
 	"github.com/tristan-gscn/repaco/internal/ui/tui"
+	"github.com/tristan-gscn/repaco/internal/updater"
 
 	// Register all project suites
 	_ "github.com/tristan-gscn/repaco/internal/projects/codexion"
@@ -22,10 +23,6 @@ import (
 	_ "github.com/tristan-gscn/repaco/internal/projects/getnextline"
 	_ "github.com/tristan-gscn/repaco/internal/projects/libft"
 	_ "github.com/tristan-gscn/repaco/internal/projects/pushswap"
-)
-
-var (
-	version = "0.1.0"
 )
 
 func main() {
@@ -36,9 +33,10 @@ func main() {
 
 	agentMode := flag.Bool("agent", false, "Agent mode: output AI-optimized markdown diagnostics with code snippets and diffs")
 	jsonMode := flag.Bool("json", false, "JSON mode: output pure machine-readable JSON")
+	noUpdate := flag.Bool("no-update", false, "Skip checking for online updates")
 
 	flag.Usage = func() {
-		fmt.Printf("repaco - Universal 42 Project Tester (v%s)\n\n", version)
+		fmt.Printf("repaco - Universal 42 Project Tester (v%s)\n\n", updater.CurrentVersion)
 		fmt.Println("Usage:")
 		fmt.Println("  repaco [options] [path]    Run tests on target project directory")
 		fmt.Println("\nModes:")
@@ -52,7 +50,11 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Printf("repaco v%s\n", version)
+		if updater.GitCommit != "" {
+			fmt.Printf("repaco v%s (%s)\n", updater.CurrentVersion, updater.GitCommit)
+		} else {
+			fmt.Printf("repaco v%s\n", updater.CurrentVersion)
+		}
 		os.Exit(0)
 	}
 
@@ -69,12 +71,17 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	eng := engine.New(cfg)
-
 	// If --agent, --json, or non-interactive terminal (e.g. piped or run by an AI agent subprocess)
 	isTerm := isatty.IsTerminal(os.Stdout.Fd()) || isatty.IsCygwinTerminal(os.Stdout.Fd())
 	useAgent := *agentMode || (!isTerm && !*jsonMode)
 	useJSON := *jsonMode
+
+	// Check for updates online if interactive and not disabled
+	if !useAgent && !useJSON && !*noUpdate && isTerm {
+		updater.CheckAndPromptUpdate(ctx)
+	}
+
+	eng := engine.New(cfg)
 
 	if useAgent || useJSON {
 		eventsChan := make(chan model.EngineEvent, 100)

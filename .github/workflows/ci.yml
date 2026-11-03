@@ -69,7 +69,15 @@ jobs:
           CGO_ENABLED: 0
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w" -o dist/${{ matrix.output_name }} ./cmd/repaco
+          PKG="github.com/tristan-gscn/repaco/internal/updater"
+          VERSION="${{ github.ref_name }}"
+          if [[ "${{ github.ref }}" == refs/heads/* ]]; then
+            VERSION="latest"
+          fi
+          COMMIT="${{ github.sha }}"
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          LDFLAGS="-s -w -X ${PKG}.CurrentVersion=${VERSION} -X ${PKG}.GitCommit=${COMMIT} -X ${PKG}.BuildDate=${BUILD_DATE}"
+          go build -trimpath -ldflags="${LDFLAGS}" -o dist/${{ matrix.output_name }} ./cmd/repaco
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -95,6 +103,13 @@ jobs:
         run: |
           mkdir -p release-assets
           find dist -type f -exec cp {} release-assets/ \;
+          cat <<EOF > release-assets/version.json
+          {
+            "version": "${{ steps.meta.outputs.tag }}",
+            "commit": "${{ github.sha }}",
+            "published_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
           ls -la release-assets
 
       - name: Determine tag and title

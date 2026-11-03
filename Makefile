@@ -4,6 +4,11 @@ TARGET      = $(BIN_DIR)/$(NAME)
 SRC         = ./cmd/repaco
 GO          = go
 INSTALL_DIR ?= $(HOME)/.local/bin
+PKG         = github.com/tristan-gscn/repaco/internal/updater
+VERSION     ?= $(shell git describe --tags --always 2>/dev/null || echo "0.1.0")
+COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "")
+DATE        ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS     = -ldflags "-s -w -X $(PKG).CurrentVersion=$(VERSION) -X $(PKG).GitCommit=$(COMMIT) -X $(PKG).BuildDate=$(DATE)"
 
 .PHONY: all build install uninstall run test clean lint help
 
@@ -12,7 +17,7 @@ all: build
 build:
 	@mkdir -p $(BIN_DIR)
 	@echo "==> Compilation de $(NAME)..."
-	$(GO) build -o $(TARGET) $(SRC)
+	$(GO) build $(LDFLAGS) -o $(TARGET) $(SRC)
 
 install: build
 	@mkdir -p $(INSTALL_DIR)
