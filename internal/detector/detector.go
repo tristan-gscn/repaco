@@ -27,12 +27,11 @@ var KnownProjects = map[model.ProjectID]model.ProjectMetadata{
 			"ft_atoi.c", "ft_calloc.c", "ft_strdup.c", "ft_substr.c", "ft_strjoin.c",
 			"ft_strtrim.c", "ft_split.c", "ft_itoa.c", "ft_strmapi.c", "ft_striteri.c",
 			"ft_putchar_fd.c", "ft_putstr_fd.c", "ft_putendl_fd.c", "ft_putnbr_fd.c",
-		},
-		BonusFiles: []string{
 			"ft_lstnew_bonus.c", "ft_lstadd_front_bonus.c", "ft_lstsize_bonus.c",
 			"ft_lstlast_bonus.c", "ft_lstadd_back_bonus.c", "ft_lstdelone_bonus.c",
 			"ft_lstclear_bonus.c", "ft_lstiter_bonus.c", "ft_lstmap_bonus.c",
 		},
+		BonusFiles: []string{},
 	},
 	model.ProjectFtPrintf: {
 		ID:             model.ProjectFtPrintf,
@@ -42,7 +41,7 @@ var KnownProjects = map[model.ProjectID]model.ProjectMetadata{
 		HasMakefile:    true,
 		LibraryName:    "libftprintf.a",
 		RequiredFiles: []string{
-			"Makefile",
+			"Makefile", "ft_printf.h",
 		},
 		BonusFiles: []string{},
 	},
@@ -54,10 +53,9 @@ var KnownProjects = map[model.ProjectID]model.ProjectMetadata{
 		HasMakefile:    false,
 		RequiredFiles: []string{
 			"get_next_line.h", "get_next_line.c", "get_next_line_utils.c",
-		},
-		BonusFiles: []string{
 			"get_next_line_bonus.h", "get_next_line_bonus.c", "get_next_line_utils_bonus.c",
 		},
+		BonusFiles: []string{},
 	},
 	model.ProjectPushSwap: {
 		ID:             model.ProjectPushSwap,
@@ -67,11 +65,9 @@ var KnownProjects = map[model.ProjectID]model.ProjectMetadata{
 		HasMakefile:    true,
 		BinaryName:     "push_swap",
 		RequiredFiles: []string{
-			"Makefile", "push_swap.h",
+			"Makefile", "push_swap.h", "checker.h",
 		},
-		BonusFiles: []string{
-			"checker.h",
-		},
+		BonusFiles: []string{},
 	},
 	model.ProjectCodexion: {
 		ID:             model.ProjectCodexion,
@@ -120,8 +116,10 @@ func (d *Detector) Detect(rootDir string) (*model.DetectionResult, error) {
 		fileMap[f.Name()] = true
 	}
 
-	// 1. Check get_next_line: unique signature is get_next_line.h/c
-	if fileMap["get_next_line.h"] && fileMap["get_next_line.c"] {
+	// 1. Check get_next_line: signature is any get_next_line header or source file
+	if fileMap["get_next_line.h"] || fileMap["get_next_line.c"] || fileMap["get_next_line_utils.c"] ||
+		fileMap["get_next_line_bonus.h"] || fileMap["get_next_line_bonus.c"] || fileMap["get_next_line_utils_bonus.c"] ||
+		hasSubfile(absDir, "includes", "get_next_line.h") || hasSubfile(absDir, "inc", "get_next_line.h") {
 		meta := KnownProjects[model.ProjectGetNextLine]
 		res := &model.DetectionResult{
 			Project:     meta,

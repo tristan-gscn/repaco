@@ -7,7 +7,17 @@
 #include <fcntl.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include "ft_printf.h"
+
+/* Weak stub for ft_printf so missing implementations do not fail harness linking */
+static const char *g_missing_fn = NULL;
+
+__attribute__((weak)) int ft_printf(const char *format, ...) {
+	(void)format;
+	g_missing_fn = "ft_printf";
+	return -1;
+}
 
 typedef struct s_test_entry {
 	const char *id;
@@ -678,7 +688,14 @@ int main(int argc, char **argv) {
 				char expl[512] = {0};
 				char adv[512] = {0};
 
+				g_missing_fn = NULL;
 				int pass = g_tests[i].fn(exp, act, expl, adv);
+				if (g_missing_fn) {
+					pass = 0;
+					snprintf(act, sizeof(act), "Symbol %s not found in libftprintf.a", g_missing_fn);
+					snprintf(expl, sizeof(expl), "Function %s is missing from libftprintf.a (source file not compiled or symbol missing)", g_missing_fn);
+					snprintf(adv, sizeof(adv), "Implement %s and ensure it is compiled into libftprintf.a.", g_missing_fn);
+				}
 				if (pass) {
 					printf("STATUS: PASS\n");
 					if (!exp[0] && g_tests[i].expected) {

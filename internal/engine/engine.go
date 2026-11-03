@@ -124,7 +124,7 @@ func (e *Engine) Run(ctx context.Context, eventsChan chan<- model.EngineEvent) (
 			TestResult: prepResult,
 			Message:    "Build check finished",
 		}
-		if prepResult.Status == model.StatusFailed {
+		if prepResult.Status == model.StatusFailed && e.cfg.FailFast {
 			suiteResult.Duration = time.Since(startTime)
 			suiteResult.UpdateStats()
 			eventsChan <- model.EngineEvent{

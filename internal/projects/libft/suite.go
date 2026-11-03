@@ -5,8 +5,8 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -39,10 +39,12 @@ func (s *Suite) Metadata() model.ProjectMetadata {
 }
 
 func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *builder.Builder) (*model.TestResult, error) {
+	var prepRes *model.TestResult
+
 	// 1. Check Makefile compliance
 	check, err := b.CheckMakefile(ctx, dir, "libft.a")
 	if err != nil {
-		return &model.TestResult{
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_makefile",
 				Module:      "Makefile",
@@ -53,11 +55,9 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Makefile check failed: %v", err),
 			Advice:      "Check that Makefile is present and rules 'all', 'clean', 'fclean', 're' compile cleanly.",
-		}, nil
-	}
-
-	if len(check.MissingRules) > 0 {
-		return &model.TestResult{
+		}
+	} else if len(check.MissingRules) > 0 {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_rules",
 				Module:      "Makefile",
@@ -68,11 +68,9 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Missing mandatory rules: %s", strings.Join(check.MissingRules, ", ")),
 			Advice:      "Define rules $(NAME), all, clean, fclean, and re in your Makefile.",
-		}, nil
-	}
-
-	if check.RelinkDetected {
-		return &model.TestResult{
+		}
+	} else if check.RelinkDetected {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_relink",
 				Module:      "Makefile",
@@ -83,14 +81,14 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: "Makefile recompiled object files or archive even though no sources changed.",
 			Advice:      "Ensure object targets have proper prerequisites and 'all' depends on $(NAME).",
-		}, nil
+		}
 	}
 
 	// 2. Compile libft.a (or update if sources were modified)
 	libPath := filepath.Join(dir, "libft.a")
 	makeOut, err := b.ExecuteMake(ctx, dir, "all", 30*time.Second)
-	if err != nil {
-		return &model.TestResult{
+	if err != nil && prepRes == nil {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_compile",
 				Module:      "Makefile",
@@ -101,10 +99,9 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Failed to compile libft.a:\n%s", makeOut),
 			Advice:      "Fix compilation errors or missing dependencies.",
-		}, nil
-	}
-	if _, err := os.Stat(libPath); os.IsNotExist(err) {
-		return &model.TestResult{
+		}
+	} else if _, err := os.Stat(libPath); os.IsNotExist(err) && prepRes == nil {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_compile",
 				Module:      "Makefile",
@@ -115,15 +112,11 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: "Rule 'all' completed but libft.a was not created.",
 			Advice:      "Ensure $(NAME) produces libft.a.",
-		}, nil
+		}
 	}
 
-	// If bonus files exist, build bonus archive so libft.a contains both mandatory & bonus objects
-	bonusFile := filepath.Join(dir, "ft_lstnew_bonus.c")
-	if _, err := os.Stat(bonusFile); err == nil {
-		_ = os.Remove(libPath)
-		_, _ = b.ExecuteMake(ctx, dir, "bonus", 30*time.Second)
-	}
+	// If bonus rule exists, run it to ensure bonus objects are also compiled into libft.a
+	_, _ = b.ExecuteMake(ctx, dir, "bonus", 30*time.Second)
 
 	// 3. Write and compile C harness
 	workDir := filepath.Join(dir, ".repaco")
@@ -139,20 +132,19 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 	s.harnessPath = filepath.Join(workDir, "libft_harness")
 	extraFlags := []string{"-fsanitize=address,undefined", "-g"}
 
-	// Check if bonus functions were compiled into libft.a
-	nmCmd := exec.CommandContext(ctx, "nm", libPath)
-	if nmOut, err := nmCmd.Output(); err == nil {
-		if strings.Contains(string(nmOut), "ft_lstnew") {
-			extraFlags = append(extraFlags, "-DHAS_BONUS=1")
+	var linkLibs []string
+	if _, err := os.Stat(libPath); err == nil {
+		if runtime.GOOS == "darwin" {
+			linkLibs = []string{fmt.Sprintf("-Wl,-force_load,%s", libPath)}
+		} else {
+			linkLibs = []string{"-Wl,--whole-archive", libPath, "-Wl,--no-whole-archive"}
 		}
 	}
-
-	linkLibs := []string{"-L" + dir, "-lft"}
 	includeDirs := []string{dir}
 
 	harnessOut, err := b.CompileHarness(ctx, harnessSrcPath, s.harnessPath, includeDirs, extraFlags, linkLibs)
-	if err != nil {
-		return &model.TestResult{
+	if err != nil && prepRes == nil {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "libft_build_harness",
 				Module:      "Makefile",
@@ -163,7 +155,11 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Failed to link against libft.a:\n%s", harnessOut),
 			Advice:      "Check that libft.a exports all prototypes declared in libft.h without missing symbols.",
-		}, nil
+		}
+	}
+
+	if prepRes != nil {
+		return prepRes, nil
 	}
 
 	return &model.TestResult{

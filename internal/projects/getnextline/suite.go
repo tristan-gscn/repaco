@@ -40,13 +40,14 @@ func (s *Suite) Metadata() model.ProjectMetadata {
 
 func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *builder.Builder) (*model.TestResult, error) {
 	s.harnesses = make(map[string]string)
+	var prepRes *model.TestResult
 
 	// 1. Check required mandatory source files
 	required := []string{"get_next_line.h", "get_next_line.c", "get_next_line_utils.c"}
 	for _, req := range required {
 		p := filepath.Join(dir, req)
-		if _, err := os.Stat(p); os.IsNotExist(err) {
-			return &model.TestResult{
+		if _, err := os.Stat(p); os.IsNotExist(err) && prepRes == nil {
+			prepRes = &model.TestResult{
 				Case: model.TestCase{
 					ID:          "gnl_prep_missing",
 					Module:      "get_next_line",
@@ -58,7 +59,7 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 				Status:      model.StatusFailed,
 				Explanation: fmt.Sprintf("Required file %s is missing in %s", req, dir),
 				Advice:      fmt.Sprintf("Ensure %s is present at the root of the repository.", req),
-			}, nil
+			}
 		}
 	}
 
@@ -84,9 +85,12 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 	}
 
 	includeDirs := []string{dir}
-	mandatorySources := []string{
-		filepath.Join(dir, "get_next_line.c"),
-		filepath.Join(dir, "get_next_line_utils.c"),
+	var mandatorySources []string
+	for _, src := range []string{"get_next_line.c", "get_next_line_utils.c"} {
+		p := filepath.Join(dir, src)
+		if _, err := os.Stat(p); err == nil {
+			mandatorySources = append(mandatorySources, p)
+		}
 	}
 
 	// 4. Compile configs: bs42, bs1, bs1024, bs9999, bs10m, default
@@ -105,8 +109,8 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 	for _, c := range configs {
 		binPath := filepath.Join(workDir, "gnl_"+c.key)
 		out, err := b.CompileHarness(ctx, harnessSrcPath, binPath, includeDirs, c.flags, mandatorySources)
-		if err != nil {
-			return &model.TestResult{
+		if err != nil && prepRes == nil {
+			prepRes = &model.TestResult{
 				Case: model.TestCase{
 					ID:          "gnl_prep_compile_" + c.key,
 					Module:      "get_next_line_buffers",
@@ -118,36 +122,35 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 				Status:      model.StatusFailed,
 				Explanation: fmt.Sprintf("Compilation failed for %s:\n%s", c.key, out),
 				Advice:      "Fix C warnings and compilation errors.",
-			}, nil
+			}
 		}
-		s.harnesses[c.key] = binPath
+		if err == nil {
+			s.harnesses[c.key] = binPath
+		}
 	}
 
-	// 5. Compile bonus if available
-	if s.hasBonus {
-		bonusSources := []string{
-			filepath.Join(dir, "get_next_line_bonus.c"),
-			filepath.Join(dir, "get_next_line_utils_bonus.c"),
+	// 5. Compile bonus
+	var bonusSources []string
+	for _, src := range []string{"get_next_line_bonus.c", "get_next_line_utils_bonus.c"} {
+		p := filepath.Join(dir, src)
+		if _, err := os.Stat(p); err == nil {
+			bonusSources = append(bonusSources, p)
 		}
-		bonusBinPath := filepath.Join(workDir, "gnl_bonus")
-		bonusFlags := []string{"-fsanitize=address,undefined", "-g", "-D", "BUFFER_SIZE=42", "-DHAS_BONUS=1"}
-		out, err := b.CompileHarness(ctx, harnessSrcPath, bonusBinPath, includeDirs, bonusFlags, bonusSources)
-		if err != nil {
-			return &model.TestResult{
-				Case: model.TestCase{
-					ID:          "gnl_prep_compile_bonus",
-					Module:      "get_next_line_bonus",
-					File:        "get_next_line_bonus.c",
-					Name:        "Bonus compilation check",
-					Category:    model.CategoryBonus,
-					Description: "Compiles get_next_line_bonus files",
-				},
-				Status:      model.StatusFailed,
-				Explanation: fmt.Sprintf("Bonus compilation failed:\n%s", out),
-				Advice:      "Check bonus prototypes and includes.",
-			}, nil
-		}
+	}
+	if len(bonusSources) == 0 {
+		bonusSources = mandatorySources
+	}
+	bonusBinPath := filepath.Join(workDir, "gnl_bonus")
+	bonusFlags := []string{"-fsanitize=address,undefined", "-g", "-D", "BUFFER_SIZE=42", "-DHAS_BONUS=1"}
+	_, err := b.CompileHarness(ctx, harnessSrcPath, bonusBinPath, includeDirs, bonusFlags, bonusSources)
+	if err == nil {
 		s.harnesses["bonus"] = bonusBinPath
+	} else if bs42, ok := s.harnesses["bs42"]; ok {
+		s.harnesses["bonus"] = bs42
+	}
+
+	if prepRes != nil {
+		return prepRes, nil
 	}
 
 	return &model.TestResult{
@@ -240,17 +243,15 @@ func (s *Suite) Plan(ctx context.Context, dir string, cfg *config.Config) ([]mod
 	}
 
 	// 4. Bonus Cases (get_next_line_bonus.c)
-	if s.hasBonus {
-		plan = append(plan, model.TestCase{
-			ID:          "gnl_bonus_interleaved",
-			Module:      "get_next_line_bonus",
-			File:        "get_next_line_bonus.c",
-			Name:        "Interleaved reads on 3 file descriptors",
-			Description: "Tests simultaneous independent reading across fd 3, 4, 5 without losing state",
-			Category:    model.CategoryBonus,
-			Timeout:     3 * time.Second,
-		})
-	}
+	plan = append(plan, model.TestCase{
+		ID:          "gnl_bonus_interleaved",
+		Module:      "get_next_line_bonus",
+		File:        "get_next_line_bonus.c",
+		Name:        "Interleaved reads on 3 file descriptors",
+		Description: "Tests simultaneous independent reading across fd 3, 4, 5 without losing state",
+		Category:    model.CategoryMandatory,
+		Timeout:     3 * time.Second,
+	})
 
 	return plan, nil
 }

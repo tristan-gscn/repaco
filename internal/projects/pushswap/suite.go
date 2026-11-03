@@ -63,12 +63,14 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 		dir = absDir
 	}
 	s.binPath = filepath.Join(dir, "push_swap")
+	s.bonusBinPath = filepath.Join(dir, "checker")
 	s.cases = make(map[string]TestCaseDef)
+	var prepRes *model.TestResult
 
 	// 1. Makefile compliance check
 	check, err := b.CheckMakefile(ctx, dir, "push_swap")
 	if err != nil {
-		return &model.TestResult{
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "pushswap_build_makefile",
 				Module:      "Makefile",
@@ -80,11 +82,9 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Makefile check failed: %v", err),
 			Advice:      "Check that Makefile is present and rules 'all', 'clean', 'fclean', 're' compile cleanly.",
-		}, nil
-	}
-
-	if len(check.MissingRules) > 0 {
-		return &model.TestResult{
+		}
+	} else if len(check.MissingRules) > 0 {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "pushswap_build_rules",
 				Module:      "Makefile",
@@ -96,11 +96,9 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Missing mandatory rules: %s", strings.Join(check.MissingRules, ", ")),
 			Advice:      "Define rules $(NAME), all, clean, fclean, and re in your Makefile.",
-		}, nil
-	}
-
-	if check.RelinkDetected {
-		return &model.TestResult{
+		}
+	} else if check.RelinkDetected {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "pushswap_build_relink",
 				Module:      "Makefile",
@@ -112,14 +110,14 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: "Makefile recompiled object files or binary even though no sources changed.",
 			Advice:      "Ensure object targets have proper prerequisites and 'all' depends on $(NAME).",
-		}, nil
+		}
 	}
 
 	// 2. Compile push_swap binary
 	if _, err := os.Stat(s.binPath); os.IsNotExist(err) {
 		out, err := b.ExecuteMake(ctx, dir, "all", 30*time.Second)
-		if err != nil {
-			return &model.TestResult{
+		if err != nil && prepRes == nil {
+			prepRes = &model.TestResult{
 				Case: model.TestCase{
 					ID:          "pushswap_build_compile",
 					Module:      "Makefile",
@@ -131,25 +129,16 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 				Status:      model.StatusFailed,
 				Explanation: fmt.Sprintf("Failed to compile push_swap:\n%s", out),
 				Advice:      "Fix C compilation errors or missing dependencies.",
-			}, nil
+			}
 		}
 	}
 
-	// 3. Check for bonus checker
-	checkerPath := filepath.Join(dir, "checker")
-	s.hasBonus = false
-	if _, err := os.Stat(checkerPath); err == nil {
-		s.hasBonus = true
-		s.bonusBinPath = checkerPath
-	} else {
-		// Try building bonus if Makefile defines it
-		out, err := b.ExecuteMake(ctx, dir, "bonus", 10*time.Second)
-		if err == nil && !strings.Contains(out, "No rule to make target") {
-			if _, err := os.Stat(checkerPath); err == nil {
-				s.hasBonus = true
-				s.bonusBinPath = checkerPath
-			}
-		}
+	// 3. Compile bonus checker if rule or sources exist
+	_, _ = b.ExecuteMake(ctx, dir, "bonus", 10*time.Second)
+	s.hasBonus = true
+
+	if prepRes != nil {
+		return prepRes, nil
 	}
 
 	return &model.TestResult{
@@ -166,7 +155,7 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 }
 
 func (s *Suite) Plan(ctx context.Context, dir string, cfg *config.Config) ([]model.TestCase, error) {
-	definitions := GetDefaultCases(s.hasBonus)
+	definitions := GetDefaultCases(true)
 
 	if s.cases == nil {
 		s.cases = make(map[string]TestCaseDef)
@@ -227,6 +216,14 @@ func (s *Suite) RunCase(ctx context.Context, dir string, tc model.TestCase, cfg 
 
 func (s *Suite) runErrorCase(ctx context.Context, dir string, tc model.TestCase, def TestCaseDef, r *runner.Runner) (*model.TestResult, error) {
 	binPath := s.getBinPath(dir)
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusFailed,
+			Explanation: "Executable 'push_swap' not found (compilation failed or source files missing)",
+			Advice:      "Ensure Makefile is present and compiles push_swap.",
+		}, nil
+	}
 	res, err := r.Run(ctx, binPath, runner.RunOptions{
 		Args:    def.Args,
 		Cwd:     dir,
@@ -290,6 +287,14 @@ func (s *Suite) runErrorCase(ctx context.Context, dir string, tc model.TestCase,
 
 func (s *Suite) runIdentityCase(ctx context.Context, dir string, tc model.TestCase, def TestCaseDef, r *runner.Runner) (*model.TestResult, error) {
 	binPath := s.getBinPath(dir)
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusFailed,
+			Explanation: "Executable 'push_swap' not found (compilation failed or source files missing)",
+			Advice:      "Ensure Makefile is present and compiles push_swap.",
+		}, nil
+	}
 	res, err := r.Run(ctx, binPath, runner.RunOptions{
 		Args:    def.Args,
 		Cwd:     dir,
@@ -349,6 +354,14 @@ func (s *Suite) runIdentityCase(ctx context.Context, dir string, tc model.TestCa
 
 func (s *Suite) runSortCase(ctx context.Context, dir string, tc model.TestCase, def TestCaseDef, r *runner.Runner) (*model.TestResult, error) {
 	binPath := s.getBinPath(dir)
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusFailed,
+			Explanation: "Executable 'push_swap' not found (compilation failed or source files missing)",
+			Advice:      "Ensure Makefile is present and compiles push_swap.",
+		}, nil
+	}
 	res, err := r.Run(ctx, binPath, runner.RunOptions{
 		Args:    def.Args,
 		Cwd:     dir,
@@ -426,6 +439,14 @@ func (s *Suite) runSortCase(ctx context.Context, dir string, tc model.TestCase, 
 
 func (s *Suite) runBenchmarkCase(ctx context.Context, dir string, tc model.TestCase, def TestCaseDef, r *runner.Runner) (*model.TestResult, error) {
 	binPath := s.getBinPath(dir)
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusFailed,
+			Explanation: "Executable 'push_swap' not found (compilation failed or source files missing)",
+			Advice:      "Ensure Makefile is present and compiles push_swap.",
+		}, nil
+	}
 	res, err := r.Run(ctx, binPath, runner.RunOptions{
 		Args:    def.Args,
 		Cwd:     dir,
@@ -497,6 +518,14 @@ func (s *Suite) runBenchmarkCase(ctx context.Context, dir string, tc model.TestC
 
 func (s *Suite) runMemoryCase(ctx context.Context, dir string, tc model.TestCase, def TestCaseDef, r *runner.Runner) (*model.TestResult, error) {
 	binPath := s.getBinPath(dir)
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusFailed,
+			Explanation: "Executable 'push_swap' not found (compilation failed or source files missing)",
+			Advice:      "Ensure Makefile is present and compiles push_swap.",
+		}, nil
+	}
 	out, hasLeaks, err := r.RunMemoryCheck(ctx, binPath, def.Args...)
 	testRes := &model.TestResult{
 		Case:        tc,
@@ -528,15 +557,24 @@ func (s *Suite) runMemoryCase(ctx context.Context, dir string, tc model.TestCase
 
 func (s *Suite) runBonusCase(ctx context.Context, dir string, tc model.TestCase, def TestCaseDef, r *runner.Runner) (*model.TestResult, error) {
 	bonusBin := s.getBonusBinPath(dir)
-	if bonusBin == "" {
+	if _, err := os.Stat(bonusBin); os.IsNotExist(err) {
 		return &model.TestResult{
 			Case:        tc,
-			Status:      model.StatusSkipped,
-			Explanation: "Bonus checker binary not found",
+			Status:      model.StatusFailed,
+			Explanation: "Executable 'checker' not found (bonus source file missing or build failed)",
+			Advice:      "Ensure Makefile compiles the checker executable.",
 		}, nil
 	}
 
 	binPath := s.getBinPath(dir)
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusFailed,
+			Explanation: "Executable 'push_swap' not found (compilation failed or source files missing)",
+			Advice:      "Ensure Makefile is present and compiles push_swap.",
+		}, nil
+	}
 
 	switch def.ID {
 	case "pushswap_bonus_valid_sort":

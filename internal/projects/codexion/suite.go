@@ -47,6 +47,7 @@ func (s *Suite) getBinPath(dir string) string {
 func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *builder.Builder) (*model.TestResult, error) {
 	binPath := s.getBinPath(dir)
 	s.binPath = binPath
+	var prepRes *model.TestResult
 
 	// 1. Check if Makefile exists
 	makefilePath := filepath.Join(dir, "Makefile")
@@ -64,7 +65,7 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 				Status: model.StatusPassed,
 			}, nil
 		}
-		return &model.TestResult{
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "codexion_build_makefile_missing",
 				Module:      "Makefile",
@@ -76,41 +77,43 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: "No Makefile found in " + dir,
 			Advice:      "Add a Makefile at the project root with 'all', 'clean', 'fclean', 're' rules.",
-		}, nil
+		}
+	} else {
+		// 2. Compile codexion
+		out, err := b.ExecuteMake(ctx, dir, "all", 30*time.Second)
+		if err != nil {
+			prepRes = &model.TestResult{
+				Case: model.TestCase{
+					ID:          "codexion_build_compile",
+					Module:      "Makefile",
+					File:        "Makefile",
+					Name:        "make all compilation",
+					Category:    model.CategoryBuild,
+					Description: "Compiles codexion binary with -Wall -Wextra -Werror",
+				},
+				Status:      model.StatusFailed,
+				Explanation: fmt.Sprintf("Failed to compile codexion:\n%s", out),
+				Advice:      "Fix compilation errors or missing pthread libraries.",
+			}
+		} else if _, err := os.Stat(binPath); err != nil {
+			prepRes = &model.TestResult{
+				Case: model.TestCase{
+					ID:          "codexion_build_binary_missing",
+					Module:      "Makefile",
+					File:        "Makefile",
+					Name:        "Target executable existence",
+					Category:    model.CategoryBuild,
+					Description: "Verifies that 'make all' produces the 'codexion' binary",
+				},
+				Status:      model.StatusFailed,
+				Explanation: "make completed but 'codexion' binary was not found in " + dir,
+				Advice:      "Ensure Makefile target NAME is set to 'codexion'.",
+			}
+		}
 	}
 
-	// 2. Compile codexion
-	out, err := b.ExecuteMake(ctx, dir, "all", 30*time.Second)
-	if err != nil {
-		return &model.TestResult{
-			Case: model.TestCase{
-				ID:          "codexion_build_compile",
-				Module:      "Makefile",
-				File:        "Makefile",
-				Name:        "make all compilation",
-				Category:    model.CategoryBuild,
-				Description: "Compiles codexion binary with -Wall -Wextra -Werror",
-			},
-			Status:      model.StatusFailed,
-			Explanation: fmt.Sprintf("Failed to compile codexion:\n%s", out),
-			Advice:      "Fix compilation errors or missing pthread libraries.",
-		}, nil
-	}
-
-	if _, err := os.Stat(binPath); err != nil {
-		return &model.TestResult{
-			Case: model.TestCase{
-				ID:          "codexion_build_binary_missing",
-				Module:      "Makefile",
-				File:        "Makefile",
-				Name:        "Target executable existence",
-				Category:    model.CategoryBuild,
-				Description: "Verifies that 'make all' produces the 'codexion' binary",
-			},
-			Status:      model.StatusFailed,
-			Explanation: "make completed but 'codexion' binary was not found in " + dir,
-			Advice:      "Ensure Makefile target NAME is set to 'codexion'.",
-		}, nil
+	if prepRes != nil {
+		return prepRes, nil
 	}
 
 	return &model.TestResult{
@@ -159,6 +162,16 @@ func (s *Suite) RunCase(ctx context.Context, dir string, tc model.TestCase, cfg 
 
 	binPath := s.getBinPath(dir)
 	cmdSnippet := fmt.Sprintf("./codexion %s", strings.Join(def.Args, " "))
+
+	if _, err := os.Stat(binPath); os.IsNotExist(err) {
+		return &model.TestResult{
+			Case:        tc,
+			Status:      model.StatusFailed,
+			Explanation: "Executable 'codexion' not found (compilation failed or source files missing)",
+			Advice:      "Ensure Makefile compiles the codexion executable.",
+			CodeSnippet: cmdSnippet,
+		}, nil
+	}
 
 	// Memory leak case
 	if def.Kind == KindMemory {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -38,10 +39,12 @@ func (s *Suite) Metadata() model.ProjectMetadata {
 }
 
 func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *builder.Builder) (*model.TestResult, error) {
+	var prepRes *model.TestResult
+
 	// 1. Check Makefile compliance
 	check, err := b.CheckMakefile(ctx, dir, "libftprintf.a")
 	if err != nil {
-		return &model.TestResult{
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "ftprintf_build_makefile",
 				Module:      "Makefile",
@@ -53,11 +56,9 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Makefile check failed: %v", err),
 			Advice:      "Check that Makefile is present and rules 'all', 'clean', 'fclean', 're' compile cleanly.",
-		}, nil
-	}
-
-	if len(check.MissingRules) > 0 {
-		return &model.TestResult{
+		}
+	} else if len(check.MissingRules) > 0 {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "ftprintf_build_rules",
 				Module:      "Makefile",
@@ -69,11 +70,9 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Missing mandatory rules: %s", strings.Join(check.MissingRules, ", ")),
 			Advice:      "Define rules $(NAME), all, clean, fclean, and re in your Makefile.",
-		}, nil
-	}
-
-	if check.RelinkDetected {
-		return &model.TestResult{
+		}
+	} else if check.RelinkDetected {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "ftprintf_build_relink",
 				Module:      "Makefile",
@@ -85,14 +84,14 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: "Makefile recompiled object files or archive even though no sources changed.",
 			Advice:      "Ensure object targets have proper prerequisites and 'all' depends on $(NAME).",
-		}, nil
+		}
 	}
 
 	// 2. Compile libftprintf.a
 	libPath := filepath.Join(dir, "libftprintf.a")
 	makeOut, err := b.ExecuteMake(ctx, dir, "all", 30*time.Second)
-	if err != nil {
-		return &model.TestResult{
+	if err != nil && prepRes == nil {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "ftprintf_build_compile",
 				Module:      "Makefile",
@@ -104,10 +103,9 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Failed to compile libftprintf.a:\n%s", makeOut),
 			Advice:      "Fix compilation errors or missing dependencies.",
-		}, nil
-	}
-	if _, err := os.Stat(libPath); os.IsNotExist(err) {
-		return &model.TestResult{
+		}
+	} else if _, err := os.Stat(libPath); os.IsNotExist(err) && prepRes == nil {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "ftprintf_build_compile",
 				Module:      "Makefile",
@@ -119,7 +117,7 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: "Rule 'all' completed but libftprintf.a was not created.",
 			Advice:      "Ensure $(NAME) produces libftprintf.a at the root directory.",
-		}, nil
+		}
 	}
 
 	// 3. Write and compile C harness with AddressSanitizer
@@ -142,11 +140,19 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 		filepath.Join(dir, "inc"),
 		filepath.Join(dir, "libft"),
 	}
-	linkLibs := []string{"-L" + dir, "-lftprintf"}
+
+	var linkLibs []string
+	if _, err := os.Stat(libPath); err == nil {
+		if runtime.GOOS == "darwin" {
+			linkLibs = []string{fmt.Sprintf("-Wl,-force_load,%s", libPath)}
+		} else {
+			linkLibs = []string{"-Wl,--whole-archive", libPath, "-Wl,--no-whole-archive"}
+		}
+	}
 
 	harnessOut, err := b.CompileHarness(ctx, harnessSrcPath, s.harnessPath, includeDirs, extraFlags, linkLibs)
-	if err != nil {
-		return &model.TestResult{
+	if err != nil && prepRes == nil {
+		prepRes = &model.TestResult{
 			Case: model.TestCase{
 				ID:          "ftprintf_build_harness",
 				Module:      "Makefile",
@@ -158,7 +164,11 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			Status:      model.StatusFailed,
 			Explanation: fmt.Sprintf("Failed to link against libftprintf.a:\n%s", harnessOut),
 			Advice:      "Check that libftprintf.a exports ft_printf and includes ft_printf.h.",
-		}, nil
+		}
+	}
+
+	if prepRes != nil {
+		return prepRes, nil
 	}
 
 	return &model.TestResult{

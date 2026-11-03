@@ -8,6 +8,15 @@
 #include <sys/stat.h>
 #include "get_next_line.h"
 
+/* Weak stub for get_next_line so missing implementations do not fail harness linking */
+static const char *g_missing_fn = NULL;
+
+__attribute__((weak)) char *get_next_line(int fd) {
+	(void)fd;
+	g_missing_fn = "get_next_line";
+	return NULL;
+}
+
 typedef struct s_test_entry {
 	const char *id;
 	const char *module;
@@ -327,8 +336,7 @@ static int test_edge_large_fd(char *exp, char *act, char *expl, char *adv) {
 	return 1;
 }
 
-/* --- Bonus: Multi-FD reading (get_next_line_bonus.c) --- */
-#ifdef HAS_BONUS
+/* --- Multi-FD reading (get_next_line_bonus.c) --- */
 static int test_bonus_interleaved(char *exp, char *act, char *expl, char *adv) {
 	int fd1 = create_test_file("A1\nA2\nA3\n", 9);
 	int fd2 = create_test_file("B1\nB2\n", 6);
@@ -377,7 +385,6 @@ static int test_bonus_interleaved(char *exp, char *act, char *expl, char *adv) {
 	snprintf(act, 512, "All lines matched expected values across 3 fds");
 	return 1;
 }
-#endif
 
 /* ========================================================================= */
 /* TEST TABLE                                                                */
@@ -416,11 +423,9 @@ static const t_test_entry g_tests[] = {
 	{"gnl_edge_large_fd", "get_next_line_edge_cases", "Out-of-range file descriptor", "EDGE_CASE", "Tests get_next_line(10240)",
 		"fd = 10240", "NULL", "get_next_line(10240); // returns NULL", test_edge_large_fd},
 
-#ifdef HAS_BONUS
 	/* --- get_next_line_bonus.c --- */
-	{"gnl_bonus_interleaved", "get_next_line_bonus", "Interleaved reads on 3 file descriptors", "BONUS", "Tests simultaneous reading on fd 3, 4, 5 without losing state",
+	{"gnl_bonus_interleaved", "get_next_line_bonus", "Interleaved reads on 3 file descriptors", "MANDATORY", "Tests simultaneous reading on fd 3, 4, 5 without losing state",
 		"Interleaved calls on 3 open fds", "All lines read correctly from each fd", "get_next_line(fd1); get_next_line(fd2);", test_bonus_interleaved},
-#endif
 };
 
 static const size_t g_num_tests = sizeof(g_tests) / sizeof(g_tests[0]);
@@ -452,7 +457,14 @@ int main(int argc, char **argv) {
 				char expl[512] = {0};
 				char adv[512] = {0};
 
+				g_missing_fn = NULL;
 				int pass = g_tests[i].fn(exp, act, expl, adv);
+				if (g_missing_fn) {
+					pass = 0;
+					snprintf(act, sizeof(act), "Symbol %s not found in source files", g_missing_fn);
+					snprintf(expl, sizeof(expl), "Function %s is missing (get_next_line.c or bonus files not found / not defining symbol)", g_missing_fn);
+					snprintf(adv, sizeof(adv), "Ensure %s is properly implemented in get_next_line.c / get_next_line_bonus.c.", g_missing_fn);
+				}
 				if (pass) {
 					printf("STATUS: PASS\n");
 					if (!exp[0] && g_tests[i].expected) {
