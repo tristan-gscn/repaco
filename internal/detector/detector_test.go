@@ -83,14 +83,38 @@ func TestDetectorMockProjects(t *testing.T) {
 	if res.Project.ID != model.ProjectCodexion {
 		t.Errorf("Expected ProjectCodexion, got %s", res.Project.ID)
 	}
+}
 
-	// 6. Detect around test
-	detected, err := d.DetectAround(libftDir)
+func TestDetectorLibftVariations(t *testing.T) {
+	d := New()
+	tmpDir := t.TempDir()
+
+	// Libft with header in includes/
+	libftIncludes := filepath.Join(tmpDir, "libft_inc")
+	_ = os.MkdirAll(filepath.Join(libftIncludes, "includes"), 0755)
+	_ = os.WriteFile(filepath.Join(libftIncludes, "includes", "libft.h"), []byte(""), 0644)
+	_ = os.WriteFile(filepath.Join(libftIncludes, "Makefile"), []byte("NAME = libft.a\nall:"), 0644)
+
+	res, err := d.Detect(libftIncludes)
 	if err != nil {
-		t.Fatalf("DetectAround failed: %v", err)
+		t.Fatalf("Detect failed: %v", err)
 	}
-	if len(detected) == 0 {
-		t.Errorf("Expected DetectAround to find nearby sibling projects in tmpDir")
+	if res.Project.ID != model.ProjectLibft {
+		t.Errorf("Expected ProjectLibft for headers in includes/, got %s", res.Project.ID)
+	}
+
+	// Libft without header or Makefile, but with some ft_*.c files
+	libftSources := filepath.Join(tmpDir, "libft_srcs")
+	_ = os.MkdirAll(filepath.Join(libftSources, "src"), 0755)
+	_ = os.WriteFile(filepath.Join(libftSources, "src", "ft_isalpha.c"), []byte(""), 0644)
+	_ = os.WriteFile(filepath.Join(libftSources, "src", "ft_isdigit.c"), []byte(""), 0644)
+
+	res, err = d.Detect(libftSources)
+	if err != nil {
+		t.Fatalf("Detect failed: %v", err)
+	}
+	if res.Project.ID != model.ProjectLibft {
+		t.Errorf("Expected ProjectLibft for source files in src/, got %s", res.Project.ID)
 	}
 }
 
@@ -139,14 +163,6 @@ func TestDetectorNonProject(t *testing.T) {
 	}
 	if res.Project.ID != model.ProjectUnknown {
 		t.Errorf("Expected ProjectUnknown, got %s", res.Project.ID)
-	}
-
-	around, err := d.DetectAround(emptyDir)
-	if err != nil {
-		t.Fatalf("DetectAround error: %v", err)
-	}
-	if len(around) != 0 {
-		t.Errorf("Expected 0 projects around empty dir, got %d", len(around))
 	}
 }
 

@@ -36,12 +36,7 @@ type Model struct {
 	startTime    time.Time
 	elapsedTime  time.Duration
 
-	// Nearby projects mode when detected around
-	isNearbyMode   bool
-	nearbyProjects []model.DiscoveredProject
-	nearbyCursor   int
-
-	// Discovery mode when no project is detected anywhere
+	// Discovery mode when no project is detected in directory
 	isDiscovery     bool
 	knownProjects   []model.ProjectMetadata
 	discoveryCursor int
@@ -159,14 +154,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.statusMsg = ev.Message
 
-		case model.EventProjectsNearbyFound:
-			m.running = false
-			m.isNearbyMode = true
-			m.nearbyProjects = ev.ProjectsNearby
-			m.nearbyCursor = 0
-			m.statusMsg = ev.Message
-			return m, nil
-
 		case model.EventBuildStarted:
 			m.statusMsg = ev.Message
 
@@ -222,7 +209,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case "right":
-			if m.isNearbyMode || m.isDiscovery {
+			if m.isDiscovery {
 				m.focusRight = true
 				return m, nil
 			}
@@ -247,7 +234,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.focusRight = false
 				return m, nil
 			}
-			if !m.isNearbyMode && !m.isDiscovery && len(m.results) > 0 {
+			if !m.isDiscovery && len(m.results) > 0 {
 				treeRows := m.buildTreeRows()
 				if m.cursor >= 0 && m.cursor < len(treeRows) {
 					row := treeRows[m.cursor]
@@ -275,31 +262,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case "enter", " ":
-			if m.isNearbyMode && len(m.nearbyProjects) > 0 {
-				selected := m.nearbyProjects[m.nearbyCursor]
-				m.isNearbyMode = false
-				m.running = true
-				m.results = nil
-				m.cursor = 0
-				m.detailScroll = 0
-				m.focusRight = false
-				m.targetDir = selected.AbsPath
-				m.targetDirFiles = scanTargetDirFiles(selected.AbsPath)
-				m.stats = model.SummaryStats{}
-				m.startTime = time.Now()
-				m.statusMsg = "Testing " + selected.Detection.Project.Name + "..."
-				m.expandedGroups = make(map[string]bool)
-
-				newCh := make(chan model.EngineEvent, 100)
-				m.eventsChan = newCh
-
-				go func() {
-					_, _ = m.eng.RunWithDir(m.ctx, selected.AbsPath, newCh)
-				}()
-
-				return m, waitForEvent(newCh)
-			}
-			if !m.isNearbyMode && !m.isDiscovery && len(m.results) > 0 {
+			if !m.isDiscovery && len(m.results) > 0 {
 				treeRows := m.buildTreeRows()
 				if m.cursor >= 0 && m.cursor < len(treeRows) {
 					row := treeRows[m.cursor]
@@ -330,13 +293,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m, nil
 			}
-			if m.isNearbyMode {
-				if m.nearbyCursor > 0 {
-					m.nearbyCursor--
-					m.detailScroll = 0
-				}
-				return m, nil
-			}
 			if m.isDiscovery {
 				if m.discoveryCursor > 0 {
 					m.discoveryCursor--
@@ -352,13 +308,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "down":
 			if m.focusRight {
 				m.detailScroll++
-				return m, nil
-			}
-			if m.isNearbyMode {
-				if m.nearbyCursor < len(m.nearbyProjects)-1 {
-					m.nearbyCursor++
-					m.detailScroll = 0
-				}
 				return m, nil
 			}
 			if m.isDiscovery {
@@ -380,12 +329,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.detailScroll < 0 {
 					m.detailScroll = 0
 				}
-			} else if m.isNearbyMode {
-				m.nearbyCursor -= 5
-				if m.nearbyCursor < 0 {
-					m.nearbyCursor = 0
-				}
-				m.detailScroll = 0
 			} else if m.isDiscovery {
 				m.discoveryCursor -= 5
 				if m.discoveryCursor < 0 {
@@ -403,15 +346,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "pgdown", "pagedown":
 			if m.focusRight {
 				m.detailScroll += 6
-			} else if m.isNearbyMode {
-				m.nearbyCursor += 5
-				if m.nearbyCursor >= len(m.nearbyProjects) {
-					m.nearbyCursor = len(m.nearbyProjects) - 1
-					if m.nearbyCursor < 0 {
-						m.nearbyCursor = 0
-					}
-				}
-				m.detailScroll = 0
 			} else if m.isDiscovery {
 				m.discoveryCursor += 5
 				if m.discoveryCursor >= len(m.knownProjects) {
@@ -436,9 +370,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "home":
 			if m.focusRight {
 				m.detailScroll = 0
-			} else if m.isNearbyMode {
-				m.nearbyCursor = 0
-				m.detailScroll = 0
 			} else if m.isDiscovery {
 				m.discoveryCursor = 0
 				m.detailScroll = 0
@@ -450,11 +381,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "end":
 			if m.focusRight {
 				m.detailScroll = 9999
-			} else if m.isNearbyMode {
-				if len(m.nearbyProjects) > 0 {
-					m.nearbyCursor = len(m.nearbyProjects) - 1
-				}
-				m.detailScroll = 0
 			} else if m.isDiscovery {
 				if len(m.knownProjects) > 0 {
 					m.discoveryCursor = len(m.knownProjects) - 1

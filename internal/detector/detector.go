@@ -117,15 +117,15 @@ func (d *Detector) Detect(rootDir string) (*model.DetectionResult, error) {
 	}
 
 	// 1. Check get_next_line: signature is any get_next_line header or source file
-	if fileMap["get_next_line.h"] || fileMap["get_next_line.c"] || fileMap["get_next_line_utils.c"] ||
-		fileMap["get_next_line_bonus.h"] || fileMap["get_next_line_bonus.c"] || fileMap["get_next_line_utils_bonus.c"] ||
-		hasSubfile(absDir, "includes", "get_next_line.h") || hasSubfile(absDir, "inc", "get_next_line.h") {
+	if fileExistsInTree(absDir, "get_next_line.h") || fileExistsInTree(absDir, "get_next_line.c") ||
+		fileExistsInTree(absDir, "get_next_line_utils.c") || fileExistsInTree(absDir, "get_next_line_bonus.h") ||
+		fileExistsInTree(absDir, "get_next_line_bonus.c") || fileExistsInTree(absDir, "get_next_line_utils_bonus.c") {
 		meta := KnownProjects[model.ProjectGetNextLine]
 		res := &model.DetectionResult{
 			Project:     meta,
 			Confidence:  1.0,
 			RootDir:     absDir,
-			HasMakefile: fileMap["Makefile"],
+			HasMakefile: fileMap["Makefile"] || fileMap["makefile"],
 		}
 		d.populateFiles(absDir, meta, fileMap, res)
 		return res, nil
@@ -133,12 +133,15 @@ func (d *Detector) Detect(rootDir string) (*model.DetectionResult, error) {
 
 	// 2. Check codexion: unique signature is codexion.h or Makefile producing codexion
 	isCodexion := false
-	if fileMap["codexion.h"] || hasSubfile(absDir, "includes", "codexion.h") || hasSubfile(absDir, "inc", "codexion.h") {
+	if fileExistsInTree(absDir, "codexion.h") {
 		isCodexion = true
-	} else if fileMap["Makefile"] {
-		if content, err := os.ReadFile(filepath.Join(absDir, "Makefile")); err == nil {
-			if strings.Contains(string(content), "codexion") {
-				isCodexion = true
+	} else if fileMap["Makefile"] || fileMap["makefile"] {
+		for _, mf := range []string{"Makefile", "makefile"} {
+			if content, err := os.ReadFile(filepath.Join(absDir, mf)); err == nil {
+				if strings.Contains(string(content), "codexion") {
+					isCodexion = true
+					break
+				}
 			}
 		}
 	}
@@ -148,34 +151,49 @@ func (d *Detector) Detect(rootDir string) (*model.DetectionResult, error) {
 			Project:     meta,
 			Confidence:  1.0,
 			RootDir:     absDir,
-			HasMakefile: fileMap["Makefile"],
+			HasMakefile: fileMap["Makefile"] || fileMap["makefile"],
 		}
 		d.populateFiles(absDir, meta, fileMap, res)
 		return res, nil
 	}
 
-	// 3. Check push_swap: unique signature is push_swap.h or Makefile producing push_swap
-	if fileMap["push_swap.h"] || hasSubfile(absDir, "includes", "push_swap.h") {
+	// 3. Check push_swap: unique signature is push_swap.h, checker.h, or Makefile producing push_swap
+	isPushSwap := false
+	if fileExistsInTree(absDir, "push_swap.h") || fileExistsInTree(absDir, "checker.h") {
+		isPushSwap = true
+	} else if fileMap["Makefile"] || fileMap["makefile"] {
+		for _, mf := range []string{"Makefile", "makefile"} {
+			if content, err := os.ReadFile(filepath.Join(absDir, mf)); err == nil {
+				if strings.Contains(string(content), "push_swap") || strings.Contains(string(content), "checker") {
+					isPushSwap = true
+					break
+				}
+			}
+		}
+	}
+	if isPushSwap {
 		meta := KnownProjects[model.ProjectPushSwap]
 		res := &model.DetectionResult{
 			Project:     meta,
 			Confidence:  1.0,
 			RootDir:     absDir,
-			HasMakefile: fileMap["Makefile"],
+			HasMakefile: fileMap["Makefile"] || fileMap["makefile"],
 		}
 		d.populateFiles(absDir, meta, fileMap, res)
 		return res, nil
 	}
 
-	// 3. Check ft_printf: check ft_printf.h / ft_printf.c / Makefile with libftprintf.a
+	// 4. Check ft_printf: check ft_printf.h / ft_printf.c / Makefile with libftprintf.a
 	isFtPrintf := false
-	if fileMap["ft_printf.h"] || hasSubfile(absDir, "includes", "ft_printf.h") ||
-		fileMap["ft_printf.c"] || hasSubfile(absDir, "src", "ft_printf.c") {
+	if fileExistsInTree(absDir, "ft_printf.h") || fileExistsInTree(absDir, "ft_printf.c") {
 		isFtPrintf = true
-	} else if fileMap["Makefile"] {
-		if content, err := os.ReadFile(filepath.Join(absDir, "Makefile")); err == nil {
-			if strings.Contains(string(content), "libftprintf.a") || strings.Contains(string(content), "ft_printf") {
-				isFtPrintf = true
+	} else if fileMap["Makefile"] || fileMap["makefile"] {
+		for _, mf := range []string{"Makefile", "makefile"} {
+			if content, err := os.ReadFile(filepath.Join(absDir, mf)); err == nil {
+				if strings.Contains(string(content), "libftprintf.a") || strings.Contains(string(content), "ft_printf") {
+					isFtPrintf = true
+					break
+				}
 			}
 		}
 	}
@@ -185,20 +203,46 @@ func (d *Detector) Detect(rootDir string) (*model.DetectionResult, error) {
 			Project:     meta,
 			Confidence:  0.95,
 			RootDir:     absDir,
-			HasMakefile: fileMap["Makefile"],
+			HasMakefile: fileMap["Makefile"] || fileMap["makefile"],
 		}
 		d.populateFiles(absDir, meta, fileMap, res)
 		return res, nil
 	}
 
-	// 4. Check libft: libft.h present + Makefile or ft_*.c
-	if fileMap["libft.h"] || hasSubfile(absDir, "includes", "libft.h") {
+	// 5. Check libft: libft.h present anywhere, Makefile with libft.a/libft, or multiple ft_*.c functions
+	isLibft := false
+	if fileExistsInTree(absDir, "libft.h") {
+		isLibft = true
+	} else if fileMap["Makefile"] || fileMap["makefile"] {
+		for _, mf := range []string{"Makefile", "makefile"} {
+			if content, err := os.ReadFile(filepath.Join(absDir, mf)); err == nil {
+				str := string(content)
+				if strings.Contains(str, "libft.a") || strings.Contains(str, "libft") {
+					isLibft = true
+					break
+				}
+			}
+		}
+	}
+	if !isLibft {
+		ftCount := 0
+		for _, f := range KnownProjects[model.ProjectLibft].RequiredFiles {
+			if strings.HasPrefix(f, "ft_") && fileExistsInTree(absDir, f) {
+				ftCount++
+				if ftCount >= 2 {
+					isLibft = true
+					break
+				}
+			}
+		}
+	}
+	if isLibft {
 		meta := KnownProjects[model.ProjectLibft]
 		res := &model.DetectionResult{
 			Project:     meta,
 			Confidence:  0.95,
 			RootDir:     absDir,
-			HasMakefile: fileMap["Makefile"],
+			HasMakefile: fileMap["Makefile"] || fileMap["makefile"],
 		}
 		d.populateFiles(absDir, meta, fileMap, res)
 		return res, nil
@@ -216,98 +260,15 @@ func (d *Detector) Detect(rootDir string) (*model.DetectionResult, error) {
 	}, nil
 }
 
-// DetectAround scans immediate subdirectories and parent siblings to discover 42 projects nearby.
-func (d *Detector) DetectAround(rootDir string) ([]model.DiscoveredProject, error) {
-	absDir, err := filepath.Abs(rootDir)
-	if err != nil {
-		return nil, err
-	}
-
-	var candidates []string
-	seen := make(map[string]bool)
-	seen[absDir] = true
-
-	parent := filepath.Dir(absDir)
-	isRootOrHome := parent == absDir || absDir == "/" || absDir == "/Users" || absDir == "/home"
-
-	// 1. Immediate subdirectories of rootDir
-	if entries, err := os.ReadDir(absDir); err == nil {
-		for _, e := range entries {
-			if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !isIgnoredDir(e.Name()) {
-				p := filepath.Join(absDir, e.Name())
-				if !seen[p] {
-					seen[p] = true
-					candidates = append(candidates, p)
-				}
-			}
-		}
-	}
-
-	// 2. Sibling directories in parent folder
-	if !isRootOrHome {
-		if entries, err := os.ReadDir(parent); err == nil {
-			for _, e := range entries {
-				if e.IsDir() && !strings.HasPrefix(e.Name(), ".") && !isIgnoredDir(e.Name()) {
-					p := filepath.Join(parent, e.Name())
-					if !seen[p] {
-						seen[p] = true
-						candidates = append(candidates, p)
-					}
-				}
-			}
-		}
-	}
-
-	var discovered []model.DiscoveredProject
-	for _, c := range candidates {
-		if !mightBeCProject(c) {
-			continue
-		}
-		res, err := d.Detect(c)
-		if err == nil && res.Project.ID != model.ProjectUnknown {
-			rel, err := filepath.Rel(absDir, c)
-			if err != nil {
-				rel = c
-			} else if !strings.HasPrefix(rel, ".") {
-				rel = "./" + rel
-			}
-			discovered = append(discovered, model.DiscoveredProject{
-				Detection: *res,
-				RelPath:   rel,
-				AbsPath:   c,
-			})
-		}
-	}
-
-	return discovered, nil
-}
-
 func isIgnoredDir(name string) bool {
 	switch strings.ToLower(name) {
 	case "library", "applications", "system", "node_modules", ".git", ".github",
 		"desktop", "documents", "downloads", "movies", "music", "pictures",
-		"deriveddata", "build", ".build", ".objects", "public", ".cache":
+		"deriveddata", "build", ".build", ".objects", "public", ".cache", ".repaco":
 		return true
 	default:
 		return false
 	}
-}
-
-func mightBeCProject(dir string) bool {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return false
-	}
-	for _, e := range entries {
-		name := e.Name()
-		if name == "Makefile" || name == "makefile" ||
-			strings.HasSuffix(name, ".c") || strings.HasSuffix(name, ".h") ||
-			name == "includes" || name == "src" || name == "srcs" || name == "inc" ||
-			name == "codexion" {
-			return true
-		}
-	}
-	return false
 }
 
 func (d *Detector) populateFiles(rootDir string, meta model.ProjectMetadata, fileMap map[string]bool, res *model.DetectionResult) {
@@ -328,14 +289,9 @@ func (d *Detector) populateFiles(rootDir string, meta model.ProjectMetadata, fil
 	res.HasBonus = bonusFound > 0
 }
 
-func hasSubfile(rootDir, subDir, fileName string) bool {
-	p := filepath.Join(rootDir, subDir, fileName)
-	info, err := os.Stat(p)
-	return err == nil && !info.IsDir()
-}
-
 func fileExistsInTree(rootDir, fileName string) bool {
-	subdirs := []string{"", "includes", "inc", "src", "srcs"}
+	// 1. Direct check in root and standard source/header subfolders
+	subdirs := []string{"", "includes", "inc", "include", "headers", "src", "srcs", "sources"}
 	for _, sub := range subdirs {
 		var p string
 		if sub == "" {
@@ -347,5 +303,34 @@ func fileExistsInTree(rootDir, fileName string) bool {
 			return true
 		}
 	}
+
+	// 2. Walk only inside standard source/include directories (e.g., src/string/ft_strlen.c)
+	for _, sub := range []string{"src", "srcs", "sources", "includes", "inc", "include"} {
+		subPath := filepath.Join(rootDir, sub)
+		if info, err := os.Stat(subPath); err == nil && info.IsDir() {
+			found := false
+			_ = filepath.WalkDir(subPath, func(path string, entry os.DirEntry, err error) error {
+				if err != nil {
+					return nil
+				}
+				if entry.IsDir() {
+					name := entry.Name()
+					if strings.HasPrefix(name, ".") || isIgnoredDir(name) {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				if strings.EqualFold(entry.Name(), fileName) {
+					found = true
+					return filepath.SkipAll
+				}
+				return nil
+			})
+			if found {
+				return true
+			}
+		}
+	}
+
 	return false
 }

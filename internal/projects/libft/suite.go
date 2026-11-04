@@ -140,7 +140,14 @@ func (s *Suite) Prepare(ctx context.Context, dir string, cfg *config.Config, b *
 			linkLibs = []string{"-Wl,--whole-archive", libPath, "-Wl,--no-whole-archive"}
 		}
 	}
-	includeDirs := []string{dir}
+	includeDirs := []string{
+		dir,
+		filepath.Join(dir, "includes"),
+		filepath.Join(dir, "inc"),
+		filepath.Join(dir, "include"),
+		filepath.Join(dir, "src"),
+		filepath.Join(dir, "srcs"),
+	}
 
 	harnessOut, err := b.CompileHarness(ctx, harnessSrcPath, s.harnessPath, includeDirs, extraFlags, linkLibs)
 	if err != nil && prepRes == nil {
